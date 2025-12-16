@@ -27,6 +27,16 @@ st.set_page_config(
 
 np.random.seed(42)
 
+if "routing_done" not in st.session_state:
+    st.session_state.routing_done = False
+
+if "bikers" not in st.session_state:
+    st.session_state.bikers = None
+
+if "unserved" not in st.session_state:
+    st.session_state.unserved = None
+
+
 # ============================================================
 # CONSTANTS & PATHS
 # ============================================================
@@ -293,8 +303,24 @@ store_lon = df_input["long"].iloc[0]
 # ROUTING EXECUTION
 # ============================================================
 
-if not st.button("🚀 Run Routing"):
-    st.stop()
+# if not st.button("🚀 Run Routing"):
+#     st.stop()
+if st.button("🚀 Run Routing"):
+    bikers, unserved = route_bikers(
+        df_customers,
+        store_lat,
+        store_lon,
+        NUM_BIKERS,
+        SPEED_KMPH,
+        HANDOVER_TIME,
+        SHIFT_MINUTES,
+        MAX_DISTANCE
+    )
+
+    st.session_state.bikers = bikers
+    st.session_state.unserved = unserved
+    st.session_state.routing_done = True
+
 
 bikers, unserved = route_bikers(
     df_customers,
@@ -311,12 +337,25 @@ bikers, unserved = route_bikers(
 # METRICS
 # ============================================================
 
-served = sum(len(b["served"]) for b in bikers)
+if st.session_state.routing_done:
 
-st.subheader("📊 Routing Summary")
-st.metric("Customers Served", served)
-st.metric("Service %", f"{served / len(df_customers) * 100:.1f}%")
-st.metric("Unserved Customers", len(unserved))
+    bikers = st.session_state.bikers
+    unserved = st.session_state.unserved
+
+    served = sum(len(b["served"]) for b in bikers)
+
+    st.subheader("📊 Routing Summary")
+    st.metric("Customers Served", served)
+    st.metric("Service %", f"{served / len(df_customers) * 100:.1f}%")
+    st.metric("Unserved Customers", len(unserved))
+
+
+# served = sum(len(b["served"]) for b in bikers)
+
+# st.subheader("📊 Routing Summary")
+# st.metric("Customers Served", served)
+# st.metric("Service %", f"{served / len(df_customers) * 100:.1f}%")
+# st.metric("Unserved Customers", len(unserved))
 
 # ============================================================
 # MAP VISUALIZATION
@@ -324,13 +363,23 @@ st.metric("Unserved Customers", len(unserved))
 
 st.subheader("🗺 Biker Routes & Coverage")
 
-m = folium.Map(location=[store_lat, store_lon], zoom_start=12, tiles="cartodbpositron")
+# m = folium.Map(location=[store_lat, store_lon], zoom_start=12, tiles="cartodbpositron")
 
-folium.Marker(
-    [store_lat, store_lon],
-    popup="Dark Store",
-    icon=folium.Icon(color="red", icon="building")
-).add_to(m)
+# folium.Marker(
+#     [store_lat, store_lon],
+#     popup="Dark Store",
+#     icon=folium.Icon(color="red", icon="building")
+# ).add_to(m)
+
+if st.session_state.routing_done:
+
+    m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
+
+    for b in bikers:
+        folium.PolyLine(b["path"], weight=4).add_to(m)
+
+    st_folium(m, height=600)
+
 
 colors = ["red", "blue", "green", "purple", "orange"]
 
@@ -343,6 +392,12 @@ for i, b in enumerate(bikers):
     ).add_to(m)
 
 st_folium(m, height=600)
+
+if st.sidebar.button("🔄 Reset Routing"):
+    st.session_state.routing_done = False
+    st.session_state.bikers = None
+    st.session_state.unserved = None
+
 
 # ============================================================
 # DOWNLOAD BIKER LOG
