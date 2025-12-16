@@ -136,6 +136,8 @@ def route_bikers_v3(
     # -----------------------
     # Initialize bikers
     # -----------------------
+    ALPHA = 0.8   # time balance weight
+    BETA = 0.5    # distance balance weight
     bikers = []
     for i in range(num_bikers):
         bikers.append({
@@ -176,8 +178,18 @@ def route_bikers_v3(
                 ):
                     continue
 
-                if best is None or leg_dist < best[0]:
-                    best = (leg_dist, bi, ci, arrival, complete)
+                time_load = b["time"] / shift_minutes
+                dist_load = b["distance"] / max_distance_km
+                
+                score = (
+                    leg_dist
+                    + ALPHA * time_load * leg_dist
+                    + BETA * dist_load * leg_dist
+                )
+                
+                if best is None or score < best[0]:
+                    best = (score, bi, ci, arrival, complete)
+
 
         if best is None:
             break  # no more feasible assignments
@@ -185,7 +197,12 @@ def route_bikers_v3(
         # -----------------------
         # Commit best assignment
         # -----------------------
-        leg_dist, bi, ci, arrival, complete = best
+        _, bi, ci, arrival, complete = best
+        leg_dist = haversine(
+            bikers[bi]["lat"], bikers[bi]["lon"],
+            unserved.loc[ci].lat, unserved.loc[ci].lon
+        )
+
         biker = bikers[bi]
         c = unserved.loc[ci]
 
