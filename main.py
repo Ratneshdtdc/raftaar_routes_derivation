@@ -214,9 +214,16 @@ st.success("✅ Input file loaded")
 # LOAD SHAPEFILE & FILTER PINCODES
 # ============================================================
 
-with st.spinner("⬇️ Loading India Pincode Shapefile..."):
+# with st.spinner("⬇️ Loading India Pincode Shapefile..."):
+#     shp_path = download_and_extract_shapefile()
+#     gdf = load_shapefile(shp_path)
+
+@st.cache_data(show_spinner="⬇️ Loading India Pincode Shapefile...")
+def load_pincode_gdf():
     shp_path = download_and_extract_shapefile()
-    gdf = load_shapefile(shp_path)
+    return load_shapefile(shp_path)
+
+gdf = load_pincode_gdf()
 
 pincode_col = next(col for col in gdf.columns if "PIN" in col.upper())
 gdf[pincode_col] = gdf[pincode_col].astype(str)
