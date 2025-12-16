@@ -241,6 +241,68 @@ def route_bikers_v2(
 
     return bikers, unserved
 
+def try_reassign_unserved(
+    unserved,
+    bikers,
+    store_lat,
+    store_lon,
+    speed_kmph,
+    service_time_min,
+    shift_minutes,
+    max_distance_km
+):
+    still_unserved = []
+
+    for c in unserved:
+        assigned = False
+
+        for biker in bikers:
+            # current biker state
+            cur_lat, cur_lon = biker["path"][-2] if len(biker["path"]) > 1 else (store_lat, store_lon)
+            cur_time = biker["time"]
+            cur_dist = biker["distance"]
+
+            leg_dist = haversine(cur_lat, cur_lon, c.lat, c.lon)
+            leg_time = leg_dist / speed_kmph * 60
+            ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
+            ret_time = ret_dist / speed_kmph * 60
+
+            arrival = cur_time + leg_time
+            complete = arrival + service_time_min
+
+            if (
+                complete + ret_time <= shift_minutes and
+                cur_dist + leg_dist + ret_dist <= max_distance_km
+            ):
+                # assign
+                biker["journey"].append({
+                    "from": biker["journey"][-1]["to"],
+                    "to": c.customer_id,
+                    "pincode": c.pincode,
+                    "leg_travel_km": round(leg_dist, 2),
+                    "leg_travel_time_min": round(leg_time, 1),
+                    "arrival_time_min": round(arrival, 1),
+                    "delivery_complete_min": round(complete, 1),
+                    "cumulative_time_min": round(complete, 1),
+                    "cumulative_distance_km": round(cur_dist + leg_dist, 2),
+                    "lat": c.lat,
+                    "lon": c.lon
+                })
+
+                biker["served"].append(c)
+                biker["path"].insert(-1, (c.lat, c.lon))
+                biker["time"] = complete
+                biker["distance"] = cur_dist + leg_dist
+
+                assigned = True
+                break
+
+        if not assigned:
+            still_unserved.append(c)
+
+    return bikers, still_unserved
+
+
 
 # ============================================================
 # UI – HEADER & TEMPLATE
@@ -378,6 +440,18 @@ if st.button("🚀 Run Routing"):
     HANDOVER_TIME,
     SHIFT_MINUTES,
     MAX_DISTANCE)
+
+    bikers, unserved = try_reassign_unserved(
+    unserved,
+    bikers,
+    store_lat,
+    store_lon,
+    SPEED_KMPH,
+    HANDOVER_TIME,
+    SHIFT_MINUTES,
+    MAX_DISTANCE
+)
+
 
 
     st.session_state.bikers = bikers
