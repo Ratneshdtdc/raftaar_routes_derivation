@@ -1,29 +1,44 @@
+# ============================================================
+# 🛣️ Raftaar – Biker Routing & Planning Tool
+# ============================================================
+
 import os
 import zipfile
+import math
+from io import BytesIO
+
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 import streamlit as st
 import gdown
 import folium
+
 from shapely.geometry import Point
 from streamlit_folium import st_folium
-from io import BytesIO
-import openpyxl
-import math
 
+# ============================================================
+# PAGE CONFIG
+# ============================================================
+st.set_page_config(
+    page_title="🛣️ Raftaar Bikers Routing Tool",
+    layout="wide"
+)
 
-# ---------------- CONFIG ----------------
-st.set_page_config(page_title="🛣️ Raftaar Bikers Routing Tool", layout="wide")
+np.random.seed(42)
 
+# ============================================================
+# CONSTANTS & PATHS
+# ============================================================
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1q1sXQq-3F2khJul-p5dfbcriS_pnrnPX"
 DATA_DIR = "data"
 ZIP_DIR = f"{DATA_DIR}/zip"
 SHP_DIR = f"{DATA_DIR}/shp"
 
-np.random.seed(42)
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
 
-# ---------------- HELPERS ----------------
 def download_and_extract_shapefile():
     os.makedirs(ZIP_DIR, exist_ok=True)
     os.makedirs(SHP_DIR, exist_ok=True)
@@ -31,11 +46,14 @@ def download_and_extract_shapefile():
     gdown.download_folder(
         DRIVE_FOLDER_URL,
         output=ZIP_DIR,
-        quiet=False,
+        quiet=True,
         use_cookies=False
     )
 
     zip_files = [f for f in os.listdir(ZIP_DIR) if f.endswith(".zip")]
+    if not zip_files:
+        raise FileNotFoundError("No ZIP found in Drive folder")
+
     zip_path = os.path.join(ZIP_DIR, zip_files[0])
 
     with zipfile.ZipFile(zip_path, "r") as z:
@@ -46,7 +64,8 @@ def download_and_extract_shapefile():
             if f.endswith(".shp"):
                 return os.path.join(root, f)
 
-    raise FileNotFoundError("Shapefile not found")
+    raise FileNotFoundError("Shapefile not found after extraction")
+
 
 @st.cache_data
 def load_shapefile(shp_path):
@@ -55,7 +74,8 @@ def load_shapefile(shp_path):
         gdf = gdf.set_crs("EPSG:4326")
     return gdf
 
-def generate_points(polygon, n, pincode, attrs, start_id):
+
+def generate_points_in_polygon(polygon, n, pincode, attrs, start_id):
     points = []
     minx, miny, maxx, maxy = polygon.bounds
     cid = start_id
@@ -74,121 +94,9 @@ def generate_points(polygon, n, pincode, attrs, start_id):
                 "lon": pt.x,
                 **attrs
             })
+
     return points, cid
 
-# ---------------- UI ----------------
-st.title("📍 Raftaar Bikers Routing Tool")
-
-st.markdown("""
-### 📥 Input File Format
-Download the template, fill it, and upload back.
-
-- **Pincode** → Serviceable pincode  
-- **OPD** → Orders per day  
-- **Office Code** → Dark store / branch  
-- **lat / long** → Dark store coordinates  
-""")
-
-# -------- TEMPLATE DOWNLOAD --------
-template = pd.DataFrame(
-    columns=["Pincode", "OPD", "Office Code", "lat", "long"]
-)
-
-buffer = BytesIO()
-template.to_excel(buffer, index=False, engine="openpyxl")
-buffer.seek(0)
-
-st.download_button(
-    label="⬇️ Download Template",
-    data=buffer,
-    file_name="input_template.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-# -------- FILE UPLOAD --------
-uploaded_file = st.file_uploader("📤 Upload Filled Template", type=["xlsx"])
-
-if uploaded_file:
-
-    df = pd.read_excel(uploaded_file)
-    df["Pincode"] = df["Pincode"].astype(str)
-
-    st.success("✅ Input file loaded")
-
-    # -------- SHAPEFILE LOAD --------
-    with st.spinner("⬇️ Loading India Pincode Shapefile..."):
-        shp_path = download_and_extract_shapefile()
-        gdf = load_shapefile(shp_path)
-
-    # detect pincode column
-    pincode_col = next(col for col in gdf.columns if "PIN" in col.upper())
-    gdf[pincode_col] = gdf[pincode_col].astype(str)
-
-    # filter required pincodes
-    gdf = gdf[gdf[pincode_col].isin(df["Pincode"])]
-
-    st.info(f"Filtered {len(gdf)} pincode polygons")
-
-    # -------- MERGE METADATA --------
-    df = df.rename(columns={"Pincode": "pincode", "Office Code": "facility_code"})
-    gdf = gdf.merge(df, left_on=pincode_col, right_on="pincode", how="left")
-
-    # -------- GENERATE CUSTOMER POINTS --------
-    all_points = []
-    counter = 0
-
-    for _, row in gdf.iterrows():
-        if row["OPD"] > 0:
-            pts, counter = generate_points(
-                row.geometry,
-                int(row.OPD),
-                row.pincode,
-                {
-                    "facility_code": row.facility_code,
-                    "OPD": row.OPD
-                },
-                counter
-            )
-            all_points.extend(pts)
-
-    df_customers = pd.DataFrame(all_points)
-    st.success(f"🎯 Generated {len(df_customers)} customer points")
-
-    # -------- MAP --------
-    st.subheader("🗺 Dark Store & Customer Distribution")
-
-    m = folium.Map(
-        location=[df["lat"].mean(), df["long"].mean()],
-        zoom_start=11,
-        tiles="cartodbpositron"
-    )
-
-    # customer points
-    for _, r in df_customers.iterrows():
-        folium.CircleMarker(
-            [r.lat, r.lon],
-            radius=2,
-            color="blue",
-            fill=True,
-            fill_opacity=0.6
-        ).add_to(m)
-
-    # dark stores
-    for _, r in df.iterrows():
-        folium.Marker(
-            [r.lat, r.long],
-            popup=f"Facility: {r.facility_code}",
-            icon=folium.Icon(color="red", icon="building")
-        ).add_to(m)
-
-    st_folium(m, height=550)
-
-    # -------- DOWNLOAD OUTPUT --------
-    st.download_button(
-        "⬇️ Download Customer Points CSV",
-        df_customers.to_csv(index=False),
-        file_name="customer_points.csv"
-    )
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
@@ -201,6 +109,7 @@ def haversine(lat1, lon1, lat2, lon2):
         math.sin(dlon / 2) ** 2
     )
     return 2 * R * math.asin(math.sqrt(a))
+
 
 def route_bikers(
     df_customers,
@@ -216,8 +125,8 @@ def route_bikers(
         "id": f"B{i+1}",
         "lat": store_lat,
         "lon": store_lon,
-        "distance": 0,
-        "time": 0,
+        "distance": 0.0,
+        "time": 0.0,
         "served": [],
         "path": [(store_lat, store_lon)]
     } for i in range(num_bikers)]
@@ -225,30 +134,31 @@ def route_bikers(
     unserved = []
 
     df_customers = df_customers.copy()
-    df_customers["dist"] = df_customers.apply(
+    df_customers["dist_store"] = df_customers.apply(
         lambda r: haversine(store_lat, store_lon, r.lat, r.lon),
         axis=1
     )
 
-    for _, c in df_customers.sort_values("dist").iterrows():
-        assigned = False
+    for _, c in df_customers.sort_values("dist_store").iterrows():
 
         bikers.sort(key=lambda x: len(x["served"]))
+        assigned = False
 
         for b in bikers:
             d = haversine(b["lat"], b["lon"], c.lat, c.lon)
             ret = haversine(c.lat, c.lon, store_lat, store_lon)
 
-            t = (d + ret) / speed_kmph * 60 + service_time
-            dist = d + ret
+            travel_time = (d + ret) / speed_kmph * 60
+            total_time = travel_time + service_time
+            total_dist = d + ret
 
             if (
-                b["time"] + t <= shift_minutes and
-                b["distance"] + dist <= max_distance
+                b["time"] + total_time <= shift_minutes and
+                b["distance"] + total_dist <= max_distance
             ):
                 b["served"].append(c)
-                b["time"] += t
-                b["distance"] += dist
+                b["time"] += total_time
+                b["distance"] += total_dist
                 b["lat"], b["lon"] = c.lat, c.lon
                 b["path"].append((c.lat, c.lon))
                 assigned = True
@@ -259,10 +169,105 @@ def route_bikers(
 
     return bikers, unserved
 
+# ============================================================
+# UI – HEADER & TEMPLATE
+# ============================================================
+
+st.title("🛣️ Raftaar – Biker Routing & Planning Tool")
+
+st.markdown("""
+### 📥 Input File Format
+- **Pincode** → Serviceable pincode  
+- **OPD** → Orders per day  
+- **Office Code** → Dark store / branch  
+- **lat** → Dark store latitude  
+- **long** → Dark store longitude  
+""")
+
+template = pd.DataFrame(columns=["Pincode", "OPD", "Office Code", "lat", "long"])
+buffer = BytesIO()
+template.to_excel(buffer, index=False)
+buffer.seek(0)
+
+st.download_button(
+    "⬇️ Download Input Template",
+    buffer,
+    file_name="input_template.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+# ============================================================
+# FILE UPLOAD
+# ============================================================
+
+uploaded_file = st.file_uploader("📤 Upload Filled Template", type=["xlsx"])
+
+if uploaded_file is None:
+    st.stop()
+
+df_input = pd.read_excel(uploaded_file)
+df_input["Pincode"] = df_input["Pincode"].astype(str)
+
+st.success("✅ Input file loaded")
+
+# ============================================================
+# LOAD SHAPEFILE & FILTER PINCODES
+# ============================================================
+
+with st.spinner("⬇️ Loading India Pincode Shapefile..."):
+    shp_path = download_and_extract_shapefile()
+    gdf = load_shapefile(shp_path)
+
+pincode_col = next(col for col in gdf.columns if "PIN" in col.upper())
+gdf[pincode_col] = gdf[pincode_col].astype(str)
+
+gdf = gdf[gdf[pincode_col].isin(df_input["Pincode"])]
+
+st.info(f"Filtered {len(gdf)} pincode polygons")
+
+# ============================================================
+# MERGE METADATA
+# ============================================================
+
+df_input = df_input.rename(
+    columns={"Pincode": "pincode", "Office Code": "facility_code"}
+)
+
+gdf = gdf.merge(df_input, left_on=pincode_col, right_on="pincode", how="left")
+
+# ============================================================
+# GENERATE CUSTOMER POINTS
+# ============================================================
+
+all_points = []
+counter = 0
+
+for _, row in gdf.iterrows():
+    if row.OPD > 0:
+        pts, counter = generate_points_in_polygon(
+            row.geometry,
+            int(row.OPD),
+            row.pincode,
+            {
+                "facility_code": row.facility_code,
+                "OPD": row.OPD
+            },
+            counter
+        )
+        all_points.extend(pts)
+
+df_customers = pd.DataFrame(all_points)
+
+st.success(f"🎯 Generated {len(df_customers)} customer points")
+
+# ============================================================
+# SIDEBAR – ROUTING PARAMETERS
+# ============================================================
+
 st.sidebar.header("⚙️ Routing Parameters")
 
-START_TIME = st.sidebar.time_input("Start Time", value=pd.to_datetime("10:00").time())
-END_TIME = st.sidebar.time_input("End Time", value=pd.to_datetime("20:00").time())
+START_TIME = st.sidebar.time_input("Start Time", pd.to_datetime("10:00").time())
+END_TIME = st.sidebar.time_input("End Time", pd.to_datetime("20:00").time())
 
 HANDOVER_TIME = st.sidebar.number_input("Handover Time (mins)", 5, 30, 10)
 SPEED_KMPH = st.sidebar.number_input("Speed (km/h)", 5, 30, 15)
@@ -274,53 +279,83 @@ SHIFT_MINUTES = (
     pd.Timestamp.combine(pd.Timestamp.today(), START_TIME)
 ).seconds / 60
 
-# df_customers MUST exist here
-# Columns required: lat, lon
+store_lat = df_input["lat"].iloc[0]
+store_lon = df_input["long"].iloc[0]
 
-st.success(f"Customers loaded: {len(df_customers)}")
+# ============================================================
+# ROUTING EXECUTION
+# ============================================================
 
-if st.button("🚀 Run Routing"):
+if not st.button("🚀 Run Routing"):
+    st.stop()
 
-    bikers, unserved = route_bikers(
-        df_customers,
-        store_lat,
-        store_lon,
-        NUM_BIKERS,
-        SPEED_KMPH,
-        HANDOVER_TIME,
-        SHIFT_MINUTES,
-        MAX_DISTANCE
-    )
+bikers, unserved = route_bikers(
+    df_customers,
+    store_lat,
+    store_lon,
+    NUM_BIKERS,
+    SPEED_KMPH,
+    HANDOVER_TIME,
+    SHIFT_MINUTES,
+    MAX_DISTANCE
+)
+
+# ============================================================
+# METRICS
+# ============================================================
 
 served = sum(len(b["served"]) for b in bikers)
 
+st.subheader("📊 Routing Summary")
 st.metric("Customers Served", served)
 st.metric("Service %", f"{served / len(df_customers) * 100:.1f}%")
-st.metric("Unserved", len(unserved))
+st.metric("Unserved Customers", len(unserved))
 
-m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
+# ============================================================
+# MAP VISUALIZATION
+# ============================================================
 
-for b in bikers:
-    folium.PolyLine(b["path"], weight=4).add_to(m)
+st.subheader("🗺 Biker Routes & Coverage")
+
+m = folium.Map(location=[store_lat, store_lon], zoom_start=12, tiles="cartodbpositron")
+
+folium.Marker(
+    [store_lat, store_lon],
+    popup="Dark Store",
+    icon=folium.Icon(color="red", icon="building")
+).add_to(m)
+
+colors = ["red", "blue", "green", "purple", "orange"]
+
+for i, b in enumerate(bikers):
+    folium.PolyLine(
+        b["path"],
+        weight=4,
+        color=colors[i % len(colors)],
+        tooltip=b["id"]
+    ).add_to(m)
 
 st_folium(m, height=600)
 
+# ============================================================
+# DOWNLOAD BIKER LOG
+# ============================================================
 
 logs = []
 for b in bikers:
     for i, c in enumerate(b["served"], 1):
         logs.append({
-            "biker": b["id"],
-            "seq": i,
+            "biker_id": b["id"],
+            "sequence": i,
+            "customer_id": c.customer_id,
             "lat": c.lat,
             "lon": c.lon
         })
 
+df_logs = pd.DataFrame(logs)
+
 st.download_button(
-    "⬇️ Download Biker Log",
-    pd.DataFrame(logs).to_csv(index=False),
-    "biker_log.csv"
+    "⬇️ Download Biker Journey Log",
+    df_logs.to_csv(index=False),
+    "biker_journey_log.csv"
 )
-
-
-
