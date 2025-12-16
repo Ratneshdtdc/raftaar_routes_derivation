@@ -123,11 +123,7 @@ def haversine(lat1, lon1, lat2, lon2):
     )
     return 2 * R * math.asin(math.sqrt(a))
 
-def compute_angle(lat, lon, c_lat, c_lon):
-    return math.atan2(lat - c_lat, lon - c_lon)
-
-
-def route_bikers_v2(
+def route_bikers_v3(
     df_customers,
     store_lat,
     store_lon,
@@ -137,239 +133,110 @@ def route_bikers_v2(
     shift_minutes,
     max_distance_km
 ):
-    df = df_customers.copy()
-
-    # --- radial sweep ---
-    df["angle"] = df.apply(
-        lambda r: compute_angle(r.lat, r.lon, store_lat, store_lon),
-        axis=1
-    )
-    df = df.sort_values("angle").reset_index(drop=True)
-
-    chunks = np.array_split(df, num_bikers)
-
+    # -----------------------
+    # Initialize bikers
+    # -----------------------
     bikers = []
-    unserved = []
-
-    for i, chunk in enumerate(chunks):
-
-        biker = {
+    for i in range(num_bikers):
+        bikers.append({
             "id": f"B{i+1}",
+            "lat": store_lat,
+            "lon": store_lon,
+            "time": 0.0,        # minutes since shift start
+            "distance": 0.0,    # km
             "path": [(store_lat, store_lon)],
             "journey": [],
-            "served": [],
-            "distance": 0.0,
-            "time": 0.0
-        }
-
-        cur_lat, cur_lon = store_lat, store_lon
-        cur_time = 0.0   # minutes since shift start
-        cur_dist = 0.0   # km
-
-        for _, c in chunk.iterrows():
-
-            leg_dist = haversine(cur_lat, cur_lon, c.lat, c.lon)
-            leg_time = leg_dist / speed_kmph * 60
-
-            arrival_time = cur_time + leg_time
-            delivery_complete = arrival_time + service_time_min
-
-            # ---- TIME feasibility (forward only) ----
-            if delivery_complete > shift_minutes:
-                unserved.append(c)
-                continue
-
-            # ---- DISTANCE feasibility (must allow return) ----
-            ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
-            if cur_dist + leg_dist + ret_dist > max_distance_km:
-                unserved.append(c)
-                continue
-
-            # ---- log journey ----
-            biker["journey"].append({
-                "from": "STORE" if not biker["journey"] else biker["journey"][-1]["to"],
-                "to": c.customer_id,
-                "pincode": c.pincode,
-
-                "leg_travel_km": round(leg_dist, 2),
-                "leg_travel_time_min": round(leg_time, 1),
-
-                "arrival_time_min": round(arrival_time, 1),
-                "delivery_complete_min": round(delivery_complete, 1),
-
-                "cumulative_time_min": round(delivery_complete, 1),
-                "cumulative_distance_km": round(cur_dist + leg_dist, 2),
-
-                "lat": c.lat,
-                "lon": c.lon
-            })
-
-            biker["served"].append(c)
-            biker["path"].append((c.lat, c.lon))
-
-            cur_lat, cur_lon = c.lat, c.lon
-            cur_time = delivery_complete
-            cur_dist += leg_dist
-
-        # ---- FINAL RETURN (guaranteed feasible) ----
-        ret_dist = haversine(cur_lat, cur_lon, store_lat, store_lon)
-        ret_time = ret_dist / speed_kmph * 60
-
-        biker["journey"].append({
-            "from": biker["journey"][-1]["to"] if biker["journey"] else "STORE",
-            "to": "STORE",
-            "pincode": None,
-
-            "leg_travel_km": round(ret_dist, 2),
-            "leg_travel_time_min": round(ret_time, 1),
-
-            "arrival_time_min": round(cur_time + ret_time, 1),
-            "delivery_complete_min": None,
-
-            "cumulative_time_min": round(cur_time + ret_time, 1),
-            "cumulative_distance_km": round(cur_dist + ret_dist, 2),
-
-            "lat": store_lat,
-            "lon": store_lon
+            "served": []
         })
 
-        biker["path"].append((store_lat, store_lon))
-        biker["time"] = round(cur_time + ret_time, 1)
-        biker["distance"] = round(cur_dist + ret_dist, 2)
+    unserved = df_customers.copy().reset_index(drop=True)
 
-        bikers.append(biker)
+    # -----------------------
+    # Main greedy loop
+    # -----------------------
+    while not unserved.empty:
+        best = None  # (extra_dist, biker_idx, cust_idx)
 
-    return bikers, unserved
+        for bi, b in enumerate(bikers):
+            for ci, c in unserved.iterrows():
 
-def try_reassign_unserved(
-    unserved,
-    bikers,
-    store_lat,
-    store_lon,
-    speed_kmph,
-    service_time_min,
-    shift_minutes,
-    max_distance_km
-):
-    still_unserved = []
+                leg_dist = haversine(b["lat"], b["lon"], c.lat, c.lon)
+                leg_time = leg_dist / speed_kmph * 60
 
-    for c in unserved:
-        assigned = False
+                arrival = b["time"] + leg_time
+                complete = arrival + service_time_min
 
-        for biker in bikers:
-            # current biker state
-            cur_lat, cur_lon = biker["path"][-2] if len(biker["path"]) > 1 else (store_lat, store_lon)
-            cur_time = biker["time"]
-            cur_dist = biker["distance"]
+                ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
+                ret_time = ret_dist / speed_kmph * 60
 
-            leg_dist = haversine(cur_lat, cur_lon, c.lat, c.lon)
-            leg_time = leg_dist / speed_kmph * 60
-            ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
-            ret_time = ret_dist / speed_kmph * 60
+                # ---- Feasibility ----
+                if (
+                    complete + ret_time > shift_minutes or
+                    b["distance"] + leg_dist + ret_dist > max_distance_km
+                ):
+                    continue
 
-            arrival = cur_time + leg_time
-            complete = arrival + service_time_min
+                if best is None or leg_dist < best[0]:
+                    best = (leg_dist, bi, ci, arrival, complete)
 
-            if (
-                complete + ret_time <= shift_minutes and
-                cur_dist + leg_dist + ret_dist <= max_distance_km
-            ):
-                # assign
-                biker["journey"].append({
-                    "from": biker["journey"][-1]["to"],
-                    "to": c.customer_id,
-                    "pincode": c.pincode,
-                    "leg_travel_km": round(leg_dist, 2),
-                    "leg_travel_time_min": round(leg_time, 1),
-                    "arrival_time_min": round(arrival, 1),
-                    "delivery_complete_min": round(complete, 1),
-                    "cumulative_time_min": round(complete, 1),
-                    "cumulative_distance_km": round(cur_dist + leg_dist, 2),
-                    "lat": c.lat,
-                    "lon": c.lon
-                })
+        if best is None:
+            break  # no more feasible assignments
 
-                biker["served"].append(c)
-                biker["path"].insert(-1, (c.lat, c.lon))
-                biker["time"] = complete
-                biker["distance"] = cur_dist + leg_dist
+        # -----------------------
+        # Commit best assignment
+        # -----------------------
+        leg_dist, bi, ci, arrival, complete = best
+        biker = bikers[bi]
+        c = unserved.loc[ci]
 
-                assigned = True
-                break
-
-        if not assigned:
-            still_unserved.append(c)
-
-    return bikers, still_unserved
-
-def global_reassign(
-    bikers,
-    unserved,
-    store_lat,
-    store_lon,
-    speed_kmph,
-    service_time,
-    shift_minutes,
-    max_distance
-):
-    still_unserved = []
-
-    for c in unserved:
-        best_biker = None
-        best_extra_dist = float("inf")
-
-        for b in bikers:
-            # current state
-            cur_lat, cur_lon = b["path"][-2]
-            cur_time = b["time"]
-            cur_dist = b["distance"]
-
-            d = haversine(cur_lat, cur_lon, c.lat, c.lon)
-            t = d / speed_kmph * 60
-
-            ret_d = haversine(c.lat, c.lon, store_lat, store_lon)
-            ret_t = ret_d / speed_kmph * 60
-
-            if (
-                cur_time + t + service_time + ret_t <= shift_minutes and
-                cur_dist + d + ret_d <= max_distance
-            ):
-                if d < best_extra_dist:
-                    best_extra_dist = d
-                    best_biker = b
-
-        if best_biker is None:
-            still_unserved.append(c)
-            continue
-
-        # assign to best biker
-        cur_lat, cur_lon = best_biker["path"][-2]
-        d = haversine(cur_lat, cur_lon, c.lat, c.lon)
-        t = d / speed_kmph * 60
-
-        arrival = best_biker["time"] + t
-        complete = arrival + service_time
-
-        best_biker["journey"].insert(-1, {
-            "from": best_biker["journey"][-2]["to"],
+        biker["journey"].append({
+            "from": "STORE" if not biker["journey"] else biker["journey"][-1]["to"],
             "to": c.customer_id,
             "pincode": c.pincode,
-            "leg_travel_km": round(d, 2),
-            "leg_travel_time_min": round(t, 1),
+            "leg_travel_km": round(leg_dist, 2),
+            "leg_travel_time_min": round(leg_dist / speed_kmph * 60, 1),
             "arrival_time_min": round(arrival, 1),
             "delivery_complete_min": round(complete, 1),
             "cumulative_time_min": round(complete, 1),
-            "cumulative_distance_km": round(best_biker["distance"] + d, 2),
+            "cumulative_distance_km": round(biker["distance"] + leg_dist, 2),
             "lat": c.lat,
             "lon": c.lon
         })
 
-        best_biker["path"].insert(-1, (c.lat, c.lon))
-        best_biker["served"].append(c)
-        best_biker["distance"] += d
-        best_biker["time"] = complete
+        biker["lat"], biker["lon"] = c.lat, c.lon
+        biker["time"] = complete
+        biker["distance"] += leg_dist
+        biker["path"].append((c.lat, c.lon))
+        biker["served"].append(c)
 
-    return bikers, still_unserved
+        unserved = unserved.drop(ci).reset_index(drop=True)
+
+    # -----------------------
+    # Return all bikers to store
+    # -----------------------
+    for b in bikers:
+        ret_dist = haversine(b["lat"], b["lon"], store_lat, store_lon)
+        ret_time = ret_dist / speed_kmph * 60
+
+        b["journey"].append({
+            "from": b["journey"][-1]["to"] if b["journey"] else "STORE",
+            "to": "STORE",
+            "pincode": None,
+            "leg_travel_km": round(ret_dist, 2),
+            "leg_travel_time_min": round(ret_time, 1),
+            "arrival_time_min": round(b["time"] + ret_time, 1),
+            "delivery_complete_min": None,
+            "cumulative_time_min": round(b["time"] + ret_time, 1),
+            "cumulative_distance_km": round(b["distance"] + ret_dist, 2),
+            "lat": store_lat,
+            "lon": store_lon
+        })
+
+        b["distance"] += ret_dist
+        b["time"] += ret_time
+        b["path"].append((store_lat, store_lon))
+
+    return bikers, unserved
 
 
 # ============================================================
@@ -499,7 +366,7 @@ store_lon = df_input["long"].iloc[0]
 # if not st.button("🚀 Run Routing"):
 #     st.stop()
 if st.button("🚀 Run Routing"):
-    bikers, unserved = route_bikers_v2(
+    bikers, unserved = route_bikers_v3(
     df_customers,
     store_lat,
     store_lon,
@@ -508,31 +375,7 @@ if st.button("🚀 Run Routing"):
     HANDOVER_TIME,
     SHIFT_MINUTES,
     MAX_DISTANCE)
-
-    bikers, unserved = try_reassign_unserved(
-    unserved,
-    bikers,
-    store_lat,
-    store_lon,
-    SPEED_KMPH,
-    HANDOVER_TIME,
-    SHIFT_MINUTES,
-    MAX_DISTANCE
-)
-    bikers, unserved = global_reassign(
-    bikers,
-    unserved,
-    store_lat,
-    store_lon,
-    SPEED_KMPH,
-    HANDOVER_TIME,
-    SHIFT_MINUTES,
-    MAX_DISTANCE
-)
-
-
-
-
+    
     st.session_state.bikers = bikers
     st.session_state.unserved = unserved
     st.session_state.routing_done = True
