@@ -67,36 +67,36 @@ if st.button("🚀 Download & Load Shapefile"):
         st.stop()
 
     st.success(f"✅ ZIP loaded: {zip_name}")
-    st.info(f"📂 Shapefile path: {shp_path}")
+    #st.info(f"📂 Shapefile path: {shp_path}")
 
     with st.spinner("🧠 Reading shapefile..."):
         gdf = load_gdf(shp_path)
 
     # ---------------- VALIDATION ----------------
-    st.subheader("✅ Shapefile Summary")
+    #st.subheader("✅ Shapefile Summary")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Rows", len(gdf))
-    col2.metric("Columns", len(gdf.columns))
-    col3.metric("CRS", gdf.crs.srs if gdf.crs else "None")
+    # col1, col2, col3 = st.columns(3)
+    # col1.metric("Rows", len(gdf))
+    # col2.metric("Columns", len(gdf.columns))
+    # col3.metric("CRS", gdf.crs.srs if gdf.crs else "None")
 
-    st.subheader("📑 Columns")
-    st.write(list(gdf.columns))
+    # st.subheader("📑 Columns")
+    # st.write(list(gdf.columns))
 
-    st.subheader("🔍 Sample Rows")
-    st.dataframe(gdf.head(10))
+    # st.subheader("🔍 Sample Rows")
+    # st.dataframe(gdf.head(10))
 
     # ---------------- OPTIONAL EXPORT ----------------
-    st.subheader("⬇️ Export Processed Data")
+    # st.subheader("⬇️ Export Processed Data")
 
-    if st.button("Export as Parquet (recommended)"):
-        out_path = os.path.join(DATA_DIR, "pincode_polygons.parquet")
-        gdf.to_parquet(out_path)
-        st.success("✅ Parquet file created")
+    # if st.button("Export as Parquet (recommended)"):
+    #     out_path = os.path.join(DATA_DIR, "pincode_polygons.parquet")
+    #     gdf.to_parquet(out_path)
+    #     st.success("✅ Parquet file created")
 
-        with open(out_path, "rb") as f:
-            st.download_button(
-                "Download Parquet",
-                f,
-                file_name="pincode_polygons.parquet"
-            )
+    #     with open(out_path, "rb") as f:
+    #         st.download_button(
+    #             "Download Parquet",
+    #             f,
+    #             file_name="pincode_polygons.parquet"
+    #         )
