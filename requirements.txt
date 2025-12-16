@@ -1,8 +1,10 @@
 streamlit
 geopandas
-gdown
-fiona
-pyproj
+pandas
+numpy
 shapely
+gdown
 folium
 streamlit-folium
+fiona
+pyproj
