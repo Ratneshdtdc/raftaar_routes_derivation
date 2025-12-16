@@ -494,7 +494,7 @@ for b in st.session_state.bikers:
             "sequence": seq,
 
             "from": step["from"],
-            "to": step["to_customer_id"],
+            "to": step["to"],
             "pincode": step["pincode"],
 
             "leg_travel_km": step["leg_travel_km"],
