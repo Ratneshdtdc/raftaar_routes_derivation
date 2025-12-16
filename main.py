@@ -1,24 +1,28 @@
 import os
 import zipfile
-import streamlit as st
+import numpy as np
+import pandas as pd
 import geopandas as gpd
+import streamlit as st
 import gdown
+import folium
+from shapely.geometry import Point
+from streamlit_folium import st_folium
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="Shapefile Loader", layout="wide")
+st.set_page_config(page_title="Customer Point Generator", layout="wide")
 
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1q1sXQq-3F2khJul-p5dfbcriS_pnrnPX"
 DATA_DIR = "data"
-ZIP_DIR = os.path.join(DATA_DIR, "zip")
-EXTRACT_DIR = os.path.join(DATA_DIR, "shp")
+ZIP_DIR = f"{DATA_DIR}/zip"
+SHP_DIR = f"{DATA_DIR}/shp"
 
-# ---------------- UI ----------------
-st.title("📦 Large Shapefile Loader (No Visualization)")
-st.caption("Google Drive → Streamlit → GeoPandas")
+np.random.seed(42)
 
 # ---------------- HELPERS ----------------
-def download_from_drive():
+def download_and_extract_shapefile():
     os.makedirs(ZIP_DIR, exist_ok=True)
+    os.makedirs(SHP_DIR, exist_ok=True)
 
     gdown.download_folder(
         DRIVE_FOLDER_URL,
@@ -27,76 +31,149 @@ def download_from_drive():
         use_cookies=False
     )
 
-def extract_zip():
-    os.makedirs(EXTRACT_DIR, exist_ok=True)
-
     zip_files = [f for f in os.listdir(ZIP_DIR) if f.endswith(".zip")]
-    if not zip_files:
-        st.error("❌ No ZIP file found in Drive folder")
-        st.stop()
-
     zip_path = os.path.join(ZIP_DIR, zip_files[0])
 
     with zipfile.ZipFile(zip_path, "r") as z:
-        z.extractall(EXTRACT_DIR)
+        z.extractall(SHP_DIR)
 
-    return zip_files[0]
-
-def find_shapefile():
-    for root, _, files in os.walk(EXTRACT_DIR):
+    for root, _, files in os.walk(SHP_DIR):
         for f in files:
             if f.endswith(".shp"):
                 return os.path.join(root, f)
-    return None
 
-@st.cache_data(show_spinner=False)
-def load_gdf(shp_path):
-    return gpd.read_file(shp_path)
+    raise FileNotFoundError("Shapefile not found")
 
-# ---------------- MAIN ----------------
-if st.button("🚀 Download & Load Shapefile"):
+@st.cache_data
+def load_shapefile(shp_path):
+    gdf = gpd.read_file(shp_path)
+    if gdf.crs is None:
+        gdf = gdf.set_crs("EPSG:4326")
+    return gdf
 
-    with st.spinner("⬇️ Downloading from Google Drive..."):
-        download_from_drive()
+def generate_points(polygon, n, pincode, attrs, start_id):
+    points = []
+    minx, miny, maxx, maxy = polygon.bounds
+    cid = start_id
 
-    zip_name = extract_zip()
-    shp_path = find_shapefile()
+    while len(points) < n:
+        pt = Point(
+            np.random.uniform(minx, maxx),
+            np.random.uniform(miny, maxy)
+        )
+        if polygon.contains(pt):
+            cid += 1
+            points.append({
+                "customer_id": f"CUST{cid:07d}",
+                "pincode": pincode,
+                "lat": pt.y,
+                "lon": pt.x,
+                **attrs
+            })
+    return points, cid
 
-    if shp_path is None:
-        st.error("❌ Shapefile (.shp) not found")
-        st.stop()
+# ---------------- UI ----------------
+st.title("📍 Customer Point Generator (Pincode-based)")
 
-    st.success(f"✅ ZIP loaded: {zip_name}")
-    #st.info(f"📂 Shapefile path: {shp_path}")
+st.markdown("""
+### 📥 Input File Format
+Download the template, fill it, and upload back.
 
-    with st.spinner("🧠 Reading shapefile..."):
-        gdf = load_gdf(shp_path)
+- **Pincode** → Serviceable pincode  
+- **OPD** → Orders per day  
+- **Office Code** → Dark store / branch  
+- **lat / long** → Dark store coordinates  
+""")
 
-    # ---------------- VALIDATION ----------------
-    #st.subheader("✅ Shapefile Summary")
+# -------- TEMPLATE DOWNLOAD --------
+template = pd.DataFrame(columns=["Pincode", "OPD", "Office Code", "lat", "long"])
+st.download_button(
+    "⬇️ Download Template",
+    template.to_excel(index=False, engine="openpyxl"),
+    file_name="input_template.xlsx"
+)
 
-    # col1, col2, col3 = st.columns(3)
-    # col1.metric("Rows", len(gdf))
-    # col2.metric("Columns", len(gdf.columns))
-    # col3.metric("CRS", gdf.crs.srs if gdf.crs else "None")
+# -------- FILE UPLOAD --------
+uploaded_file = st.file_uploader("📤 Upload Filled Template", type=["xlsx"])
 
-    # st.subheader("📑 Columns")
-    # st.write(list(gdf.columns))
+if uploaded_file:
 
-    # st.subheader("🔍 Sample Rows")
-    # st.dataframe(gdf.head(10))
+    df = pd.read_excel(uploaded_file)
+    df["Pincode"] = df["Pincode"].astype(str)
 
-    # ---------------- OPTIONAL EXPORT ----------------
-    # st.subheader("⬇️ Export Processed Data")
+    st.success("✅ Input file loaded")
 
-    # if st.button("Export as Parquet (recommended)"):
-    #     out_path = os.path.join(DATA_DIR, "pincode_polygons.parquet")
-    #     gdf.to_parquet(out_path)
-    #     st.success("✅ Parquet file created")
+    # -------- SHAPEFILE LOAD --------
+    with st.spinner("⬇️ Loading India Pincode Shapefile..."):
+        shp_path = download_and_extract_shapefile()
+        gdf = load_shapefile(shp_path)
 
-    #     with open(out_path, "rb") as f:
-    #         st.download_button(
-    #             "Download Parquet",
-    #             f,
-    #             file_name="pincode_polygons.parquet"
-    #         )
+    # detect pincode column
+    pincode_col = next(col for col in gdf.columns if "PIN" in col.upper())
+    gdf[pincode_col] = gdf[pincode_col].astype(str)
+
+    # filter required pincodes
+    gdf = gdf[gdf[pincode_col].isin(df["Pincode"])]
+
+    st.info(f"Filtered {len(gdf)} pincode polygons")
+
+    # -------- MERGE METADATA --------
+    df = df.rename(columns={"Pincode": "pincode", "Office Code": "facility_code"})
+    gdf = gdf.merge(df, left_on=pincode_col, right_on="pincode", how="left")
+
+    # -------- GENERATE CUSTOMER POINTS --------
+    all_points = []
+    counter = 0
+
+    for _, row in gdf.iterrows():
+        if row["OPD"] > 0:
+            pts, counter = generate_points(
+                row.geometry,
+                int(row.OPD),
+                row.pincode,
+                {
+                    "facility_code": row.facility_code,
+                    "OPD": row.OPD
+                },
+                counter
+            )
+            all_points.extend(pts)
+
+    df_customers = pd.DataFrame(all_points)
+    st.success(f"🎯 Generated {len(df_customers)} customer points")
+
+    # -------- MAP --------
+    st.subheader("🗺 Dark Store & Customer Distribution")
+
+    m = folium.Map(
+        location=[df["lat"].mean(), df["long"].mean()],
+        zoom_start=11,
+        tiles="cartodbpositron"
+    )
+
+    # customer points
+    for _, r in df_customers.iterrows():
+        folium.CircleMarker(
+            [r.lat, r.lon],
+            radius=2,
+            color="blue",
+            fill=True,
+            fill_opacity=0.6
+        ).add_to(m)
+
+    # dark stores
+    for _, r in df.iterrows():
+        folium.Marker(
+            [r.lat, r.long],
+            popup=f"Facility: {r.facility_code}",
+            icon=folium.Icon(color="red", icon="building")
+        ).add_to(m)
+
+    st_folium(m, height=550)
+
+    # -------- DOWNLOAD OUTPUT --------
+    st.download_button(
+        "⬇️ Download Customer Points CSV",
+        df_customers.to_csv(index=False),
+        file_name="customer_points.csv"
+    )
