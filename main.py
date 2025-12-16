@@ -302,6 +302,74 @@ def try_reassign_unserved(
 
     return bikers, still_unserved
 
+def global_reassign(
+    bikers,
+    unserved,
+    store_lat,
+    store_lon,
+    speed_kmph,
+    service_time,
+    shift_minutes,
+    max_distance
+):
+    still_unserved = []
+
+    for c in unserved:
+        best_biker = None
+        best_extra_dist = float("inf")
+
+        for b in bikers:
+            # current state
+            cur_lat, cur_lon = b["path"][-2]
+            cur_time = b["time"]
+            cur_dist = b["distance"]
+
+            d = haversine(cur_lat, cur_lon, c.lat, c.lon)
+            t = d / speed_kmph * 60
+
+            ret_d = haversine(c.lat, c.lon, store_lat, store_lon)
+            ret_t = ret_d / speed_kmph * 60
+
+            if (
+                cur_time + t + service_time + ret_t <= shift_minutes and
+                cur_dist + d + ret_d <= max_distance
+            ):
+                if d < best_extra_dist:
+                    best_extra_dist = d
+                    best_biker = b
+
+        if best_biker is None:
+            still_unserved.append(c)
+            continue
+
+        # assign to best biker
+        cur_lat, cur_lon = best_biker["path"][-2]
+        d = haversine(cur_lat, cur_lon, c.lat, c.lon)
+        t = d / speed_kmph * 60
+
+        arrival = best_biker["time"] + t
+        complete = arrival + service_time
+
+        best_biker["journey"].insert(-1, {
+            "from": best_biker["journey"][-2]["to"],
+            "to": c.customer_id,
+            "pincode": c.pincode,
+            "leg_travel_km": round(d, 2),
+            "leg_travel_time_min": round(t, 1),
+            "arrival_time_min": round(arrival, 1),
+            "delivery_complete_min": round(complete, 1),
+            "cumulative_time_min": round(complete, 1),
+            "cumulative_distance_km": round(best_biker["distance"] + d, 2),
+            "lat": c.lat,
+            "lon": c.lon
+        })
+
+        best_biker["path"].insert(-1, (c.lat, c.lon))
+        best_biker["served"].append(c)
+        best_biker["distance"] += d
+        best_biker["time"] = complete
+
+    return bikers, still_unserved
 
 
 # ============================================================
@@ -451,6 +519,17 @@ if st.button("🚀 Run Routing"):
     SHIFT_MINUTES,
     MAX_DISTANCE
 )
+    bikers, unserved = global_reassign(
+    bikers,
+    unserved,
+    store_lat,
+    store_lon,
+    SPEED_KMPH,
+    HANDOVER_TIME,
+    SHIFT_MINUTES,
+    MAX_DISTANCE
+)
+
 
 
 
