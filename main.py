@@ -120,8 +120,10 @@ def haversine(lat1, lon1, lat2, lon2):
     )
     return 2 * R * math.asin(math.sqrt(a))
 
+def compute_angle(lat, lon, c_lat, c_lon):
+    return math.atan2(lat - c_lat, lon - c_lon)
 
-def route_bikers(
+def route_bikers_v2(
     df_customers,
     store_lat,
     store_lon,
@@ -131,53 +133,88 @@ def route_bikers(
     shift_minutes,
     max_distance
 ):
-    bikers = [{
-        "id": f"B{i+1}",
-        "lat": store_lat,
-        "lon": store_lon,
-        "distance": 0.0,
-        "time": 0.0,
-        "served": [],
-        "path": [(store_lat, store_lon)]
-    } for i in range(num_bikers)]
+    df = df_customers.copy()
 
-    unserved = []
-
-    df_customers = df_customers.copy()
-    df_customers["dist_store"] = df_customers.apply(
-        lambda r: haversine(store_lat, store_lon, r.lat, r.lon),
+    # ---- compute polar angle ----
+    df["angle"] = df.apply(
+        lambda r: compute_angle(r.lat, r.lon, store_lat, store_lon),
         axis=1
     )
 
-    for _, c in df_customers.sort_values("dist_store").iterrows():
+    df = df.sort_values("angle").reset_index(drop=True)
 
-        bikers.sort(key=lambda x: len(x["served"]))
-        assigned = False
+    # ---- split customers radially ----
+    chunks = np.array_split(df, num_bikers)
 
-        for b in bikers:
-            d = haversine(b["lat"], b["lon"], c.lat, c.lon)
-            ret = haversine(c.lat, c.lon, store_lat, store_lon)
+    bikers = []
+    unserved = []
 
-            travel_time = (d + ret) / speed_kmph * 60
-            total_time = travel_time + service_time
-            total_dist = d + ret
+    for i, chunk in enumerate(chunks):
+
+        biker = {
+            "id": f"B{i+1}",
+            "path": [(store_lat, store_lon)],
+            "journey": [],
+            "distance": 0.0,
+            "time": 0.0,
+            "served": []
+        }
+
+        cur_lat, cur_lon = store_lat, store_lon
+        cur_time = 0
+        cur_dist = 0
+
+        for _, c in chunk.iterrows():
+
+            d = haversine(cur_lat, cur_lon, c.lat, c.lon)
+            t_travel = d / speed_kmph * 60
+            t_total = t_travel + service_time
+
+            # return check
+            d_back = haversine(c.lat, c.lon, store_lat, store_lon)
+            t_back = d_back / speed_kmph * 60
 
             if (
-                b["time"] + total_time <= shift_minutes and
-                b["distance"] + total_dist <= max_distance
+                cur_time + t_total + t_back > shift_minutes or
+                cur_dist + d + d_back > max_distance
             ):
-                b["served"].append(c)
-                b["time"] += total_time
-                b["distance"] += total_dist
-                b["lat"], b["lon"] = c.lat, c.lon
-                b["path"].append((c.lat, c.lon))
-                assigned = True
-                break
+                unserved.append(c)
+                continue
 
-        if not assigned:
-            unserved.append(c)
+            arrival = cur_time + t_travel
+            depart = arrival + service_time
+
+            biker["journey"].append({
+                "from": "STORE",
+                "to_customer_id": c.customer_id,
+                "pincode": c.pincode,
+                "travel_km": round(d, 2),
+                "travel_time_min": round(t_travel, 1),
+                "arrival_time_min": round(arrival, 1),
+                "service_complete_min": round(depart, 1),
+                "lat": c.lat,
+                "lon": c.lon
+            })
+
+            biker["served"].append(c)
+            biker["path"].append((c.lat, c.lon))
+
+            cur_lat, cur_lon = c.lat, c.lon
+            cur_time = depart
+            cur_dist += d
+
+        # ---- return to store ----
+        d_ret = haversine(cur_lat, cur_lon, store_lat, store_lon)
+        t_ret = d_ret / speed_kmph * 60
+
+        biker["path"].append((store_lat, store_lon))
+        biker["distance"] = round(cur_dist + d_ret, 2)
+        biker["time"] = round(cur_time + t_ret, 1)
+
+        bikers.append(biker)
 
     return bikers, unserved
+
 
 # ============================================================
 # UI – HEADER & TEMPLATE
@@ -306,16 +343,16 @@ store_lon = df_input["long"].iloc[0]
 # if not st.button("🚀 Run Routing"):
 #     st.stop()
 if st.button("🚀 Run Routing"):
-    bikers, unserved = route_bikers(
-        df_customers,
-        store_lat,
-        store_lon,
-        NUM_BIKERS,
-        SPEED_KMPH,
-        HANDOVER_TIME,
-        SHIFT_MINUTES,
-        MAX_DISTANCE
-    )
+    bikers, unserved = route_bikers_v2(
+    df_customers,
+    store_lat,
+    store_lon,
+    NUM_BIKERS,
+    SPEED_KMPH,
+    HANDOVER_TIME,
+    SHIFT_MINUTES,
+    MAX_DISTANCE)
+
 
     st.session_state.bikers = bikers
     st.session_state.unserved = unserved
@@ -397,23 +434,27 @@ if st.session_state.routing_done:
 
 if st.session_state.routing_done:
 
-    bikers = st.session_state.bikers
-
     logs = []
-    for b in bikers:
-        for i, c in enumerate(b["served"], 1):
+
+    for b in st.session_state.bikers:
+        for seq, step in enumerate(b["journey"], 1):
             logs.append({
                 "biker_id": b["id"],
-                "sequence": i,
-                "customer_id": c.customer_id,
-                "lat": c.lat,
-                "lon": c.lon
+                "sequence": seq,
+                "customer_id": step["to_customer_id"],
+                "pincode": step["pincode"],
+                "travel_km": step["travel_km"],
+                "travel_time_min": step["travel_time_min"],
+                "arrival_time_min": step["arrival_time_min"],
+                "service_complete_min": step["service_complete_min"],
+                "lat": step["lat"],
+                "lon": step["lon"]
             })
 
     df_logs = pd.DataFrame(logs)
 
     st.download_button(
-        "⬇️ Download Biker Journey Log",
+        "⬇️ Download Detailed Biker Journey Log",
         df_logs.to_csv(index=False),
-        "biker_journey_log.csv"
+        "biker_journey_detailed.csv"
     )
