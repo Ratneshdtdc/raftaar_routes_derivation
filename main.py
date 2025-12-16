@@ -10,6 +10,7 @@ from shapely.geometry import Point
 from streamlit_folium import st_folium
 from io import BytesIO
 import openpyxl
+import math
 
 
 # ---------------- CONFIG ----------------
@@ -188,3 +189,157 @@ if uploaded_file:
         df_customers.to_csv(index=False),
         file_name="customer_points.csv"
     )
+
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2 +
+        math.cos(math.radians(lat1)) *
+        math.cos(math.radians(lat2)) *
+        math.sin(dlon / 2) ** 2
+    )
+    return 2 * R * math.asin(math.sqrt(a))
+
+def route_bikers(
+    df_customers,
+    store_lat,
+    store_lon,
+    num_bikers,
+    speed_kmph,
+    service_time_min,
+    shift_minutes,
+    max_distance_km
+):
+    bikers = []
+    for i in range(num_bikers):
+        bikers.append({
+            "biker_id": f"B{i+1}",
+            "lat": store_lat,
+            "lon": store_lon,
+            "distance": 0,
+            "time": 0,
+            "served": [],
+            "path": [(store_lat, store_lon)]
+        })
+
+    df_customers["dist_store"] = df_customers.apply(
+        lambda r: haversine(store_lat, store_lon, r.lat, r.lon), axis=1
+    )
+    customers = df_customers.sort_values("dist_store").to_dict("records")
+
+    unserved = []
+
+    for cust in customers:
+        assigned = False
+        bikers = sorted(bikers, key=lambda x: len(x["served"]))
+
+        for b in bikers:
+            d = haversine(b["lat"], b["lon"], cust["lat"], cust["lon"])
+            return_d = haversine(cust["lat"], cust["lon"], store_lat, store_lon)
+
+            travel_time = d / speed_kmph * 60
+            return_time = return_d / speed_kmph * 60
+
+            new_time = b["time"] + travel_time + service_time_min + return_time
+            new_dist = b["distance"] + d + return_d
+
+            if new_time <= shift_minutes and new_dist <= max_distance_km:
+                b["served"].append(cust)
+                b["time"] += travel_time + service_time_min
+                b["distance"] += d
+                b["lat"], b["lon"] = cust["lat"], cust["lon"]
+                b["path"].append((cust["lat"], cust["lon"]))
+                assigned = True
+                break
+
+        if not assigned:
+            unserved.append(cust)
+
+    # return to store
+    for b in bikers:
+        back = haversine(b["lat"], b["lon"], store_lat, store_lon)
+        b["distance"] += back
+        b["time"] += back / speed_kmph * 60
+        b["path"].append((store_lat, store_lon))
+
+    return bikers, unserved
+
+served = sum(len(b["served"]) for b in bikers)
+total = len(df_customers)
+
+st.metric("Customers Served", served)
+st.metric("Service %", f"{served/total*100:.1f}%")
+
+for b in bikers:
+    st.write(
+        b["biker_id"],
+        "| Orders:", len(b["served"]),
+        "| Distance (km):", round(b["distance"], 1),
+        "| Time (min):", round(b["time"], 1)
+    )
+
+colors = ["red", "blue", "green", "purple", "orange"]
+
+m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
+
+# Pincode polygons
+folium.GeoJson(
+    gdf_filtered,
+    name="Pincodes",
+    style_function=lambda x: {
+        "fillColor": "#dbeafe",
+        "color": "black",
+        "weight": 1,
+        "fillOpacity": 0.4,
+    }
+).add_to(m)
+
+# Dark store
+folium.Marker(
+    [store_lat, store_lon],
+    icon=folium.Icon(color="black", icon="building"),
+    popup="Dark Store"
+).add_to(m)
+
+# Routes
+for i, b in enumerate(bikers):
+    folium.PolyLine(
+        b["path"],
+        color=colors[i % len(colors)],
+        weight=4,
+        tooltip=b["biker_id"]
+    ).add_to(m)
+
+    for c in b["served"]:
+        folium.CircleMarker(
+            [c["lat"], c["lon"]],
+            radius=3,
+            color=colors[i % len(colors)],
+            fill=True
+        ).add_to(m)
+
+st_folium(m, height=600)
+
+logs = []
+for b in bikers:
+    for i, c in enumerate(b["served"], 1):
+        logs.append({
+            "biker_id": b["biker_id"],
+            "seq": i,
+            "customer_id": c["customer_id"],
+            "lat": c["lat"],
+            "lon": c["lon"]
+        })
+
+df_log = pd.DataFrame(logs)
+
+st.download_button(
+    "⬇️ Download Biker Journey Log",
+    df_log.to_csv(index=False),
+    file_name="biker_routes.csv"
+)
+
+
