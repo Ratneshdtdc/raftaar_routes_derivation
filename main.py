@@ -472,53 +472,54 @@ if st.session_state.routing_done:
 # ============================================================
 # DOWNLOAD BIKER LOG
 # ============================================================
+if (
+    st.session_state.routing_done
+    and st.session_state.bikers is not None
+    and len(st.session_state.bikers) > 0
+):
 
-# ============================================================
-# DOWNLOAD BIKER LOG
-# ============================================================
+    shift_start_dt = datetime.combine(
+        datetime.today(),
+        START_TIME
+    )
 
-from datetime import datetime
+    logs = []
 
-shift_start_dt = datetime.combine(
-    datetime.today(),
-    START_TIME
-)
+    for b in st.session_state.bikers:
+        for seq, step in enumerate(b["journey"], 1):
 
-logs = []
+            logs.append({
+                "biker_id": b["id"],
+                "sequence": seq,
 
-for b in st.session_state.bikers:
-    for seq, step in enumerate(b["journey"], 1):
+                "from": step["from"],
+                "to": step["to"],
+                "pincode": step["pincode"],
 
-        logs.append({
-            "biker_id": b["id"],
-            "sequence": seq,
+                "leg_travel_km": step["leg_travel_km"],
+                "leg_travel_time_min": step["leg_travel_time_min"],
 
-            "from": step["from"],
-            "to": step["to"],
-            "pincode": step["pincode"],
+                "arrival_time": (
+                    minutes_to_time(shift_start_dt, step["arrival_time_min"])
+                    if step["arrival_time_min"] is not None else None
+                ),
 
-            "leg_travel_km": step["leg_travel_km"],
-            "leg_travel_time_min": step["leg_travel_time_min"],
+                "delivery_complete_time": (
+                    minutes_to_time(shift_start_dt, step["delivery_complete_min"])
+                    if step["delivery_complete_min"] is not None else None
+                ),
 
-            "arrival_time": minutes_to_time(shift_start_dt, step["arrival_time_min"])
-                if step["arrival_time_min"] is not None else None,
+                "cumulative_time_min": step["cumulative_time_min"],
+                "cumulative_distance_km": step["cumulative_distance_km"],
 
-            "delivery_complete_time": (
-                minutes_to_time(shift_start_dt, step["delivery_complete_min"])
-                if step["delivery_complete_min"] is not None else None
-            ),
+                "lat": step["lat"],
+                "lon": step["lon"]
+            })
 
-            "cumulative_time_min": step["cumulative_time_min"],
-            "cumulative_distance_km": step["cumulative_distance_km"],
+    df_logs = pd.DataFrame(logs)
 
-            "lat": step["lat"],
-            "lon": step["lon"]
-        })
-
-df_logs = pd.DataFrame(logs)
-
-st.download_button(
-    "⬇️ Download Full Biker Journey Log",
-    df_logs.to_csv(index=False),
-    "biker_journey_detailed_with_time.csv"
-)
+    st.download_button(
+        "⬇️ Download Full Biker Journey Log",
+        df_logs.to_csv(index=False),
+        "biker_journey_detailed_with_time.csv"
+    )
