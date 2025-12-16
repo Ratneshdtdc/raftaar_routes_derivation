@@ -322,17 +322,6 @@ if st.button("🚀 Run Routing"):
     st.session_state.routing_done = True
 
 
-bikers, unserved = route_bikers(
-    df_customers,
-    store_lat,
-    store_lon,
-    NUM_BIKERS,
-    SPEED_KMPH,
-    HANDOVER_TIME,
-    SHIFT_MINUTES,
-    MAX_DISTANCE
-)
-
 # ============================================================
 # METRICS
 # ============================================================
@@ -361,63 +350,70 @@ if st.session_state.routing_done:
 # MAP VISUALIZATION
 # ============================================================
 
+# ============================================================
+# MAP VISUALIZATION
+# ============================================================
+
 st.subheader("🗺 Biker Routes & Coverage")
-
-# m = folium.Map(location=[store_lat, store_lon], zoom_start=12, tiles="cartodbpositron")
-
-# folium.Marker(
-#     [store_lat, store_lon],
-#     popup="Dark Store",
-#     icon=folium.Icon(color="red", icon="building")
-# ).add_to(m)
 
 if st.session_state.routing_done:
 
-    m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
+    bikers = st.session_state.bikers
 
-    for b in bikers:
-        folium.PolyLine(b["path"], weight=4).add_to(m)
+    m = folium.Map(
+        location=[store_lat, store_lon],
+        zoom_start=12,
+        tiles="cartodbpositron"
+    )
+
+    # Dark store
+    folium.Marker(
+        [store_lat, store_lon],
+        popup="Dark Store",
+        icon=folium.Icon(color="red", icon="building")
+    ).add_to(m)
+
+    colors = ["red", "blue", "green", "purple", "orange"]
+
+    for i, b in enumerate(bikers):
+        folium.PolyLine(
+            b["path"],
+            weight=4,
+            color=colors[i % len(colors)],
+            tooltip=b["id"]
+        ).add_to(m)
 
     st_folium(m, height=600)
 
-
-colors = ["red", "blue", "green", "purple", "orange"]
-
-for i, b in enumerate(bikers):
-    folium.PolyLine(
-        b["path"],
-        weight=4,
-        color=colors[i % len(colors)],
-        tooltip=b["id"]
-    ).add_to(m)
-
-st_folium(m, height=600)
-
-if st.sidebar.button("🔄 Reset Routing"):
-    st.session_state.routing_done = False
-    st.session_state.bikers = None
-    st.session_state.unserved = None
 
 
 # ============================================================
 # DOWNLOAD BIKER LOG
 # ============================================================
 
-logs = []
-for b in bikers:
-    for i, c in enumerate(b["served"], 1):
-        logs.append({
-            "biker_id": b["id"],
-            "sequence": i,
-            "customer_id": c.customer_id,
-            "lat": c.lat,
-            "lon": c.lon
-        })
+# ============================================================
+# DOWNLOAD BIKER LOG
+# ============================================================
 
-df_logs = pd.DataFrame(logs)
+if st.session_state.routing_done:
 
-st.download_button(
-    "⬇️ Download Biker Journey Log",
-    df_logs.to_csv(index=False),
-    "biker_journey_log.csv"
-)
+    bikers = st.session_state.bikers
+
+    logs = []
+    for b in bikers:
+        for i, c in enumerate(b["served"], 1):
+            logs.append({
+                "biker_id": b["id"],
+                "sequence": i,
+                "customer_id": c.customer_id,
+                "lat": c.lat,
+                "lon": c.lon
+            })
+
+    df_logs = pd.DataFrame(logs)
+
+    st.download_button(
+        "⬇️ Download Biker Journey Log",
+        df_logs.to_csv(index=False),
+        "biker_journey_log.csv"
+    )
