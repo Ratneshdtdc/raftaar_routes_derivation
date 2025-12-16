@@ -9,6 +9,7 @@ import folium
 from shapely.geometry import Point
 from streamlit_folium import st_folium
 from io import BytesIO
+import openpyxl
 
 
 # ---------------- CONFIG ----------------
