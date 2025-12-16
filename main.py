@@ -73,7 +73,7 @@ def generate_points(polygon, n, pincode, attrs, start_id):
     return points, cid
 
 # ---------------- UI ----------------
-st.title("📍 Customer Point Generator (Pincode-based)")
+st.title("📍 Raftaar Bikers Routing Tool")
 
 st.markdown("""
 ### 📥 Input File Format
