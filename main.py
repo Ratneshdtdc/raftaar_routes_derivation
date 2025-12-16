@@ -137,36 +137,20 @@ def route_bikers_v2(
     shift_minutes,
     max_distance_km
 ):
-    """
-    Radial-sweep + constrained routing.
-    Returns:
-      bikers: list with full journey + paths
-      unserved: list of customers not served
-    """
-
     df = df_customers.copy()
 
-    # -------------------------------------------------
-    # 1. Compute polar angle w.r.t. dark store
-    # -------------------------------------------------
+    # --- angle for radial sweep ---
     df["angle"] = df.apply(
         lambda r: compute_angle(r.lat, r.lon, store_lat, store_lon),
         axis=1
     )
-
     df = df.sort_values("angle").reset_index(drop=True)
 
-    # -------------------------------------------------
-    # 2. Split customers radially across bikers
-    # -------------------------------------------------
     chunks = np.array_split(df, num_bikers)
 
     bikers = []
     unserved = []
 
-    # -------------------------------------------------
-    # 3. Route each biker independently
-    # -------------------------------------------------
     for i, chunk in enumerate(chunks):
 
         biker = {
@@ -179,44 +163,39 @@ def route_bikers_v2(
         }
 
         cur_lat, cur_lon = store_lat, store_lon
-        cur_time = 0.0
-        cur_dist = 0.0
+        cur_time = 0.0        # minutes since shift start
+        cur_dist = 0.0        # km
 
-        # ---------- visit customers ----------
         for _, c in chunk.iterrows():
 
-            # leg distance & time
             leg_dist = haversine(cur_lat, cur_lon, c.lat, c.lon)
             leg_time = leg_dist / speed_kmph * 60
 
-            # service
-            arrival_min = cur_time + leg_time
-            complete_min = arrival_min + service_time_min
+            arrival_time = cur_time + leg_time
+            delivery_complete = arrival_time + service_time_min
 
-            # return-to-store feasibility
-            ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
-            ret_time = ret_dist / speed_kmph * 60
-
-            if (
-                complete_min + ret_time > shift_minutes or
-                cur_dist + leg_dist + ret_dist > max_distance_km
-            ):
+            # ---- forward feasibility only ----
+            if delivery_complete > shift_minutes:
                 unserved.append(c)
                 continue
 
-            # ---------- log journey ----------
+            if cur_dist + leg_dist > max_distance_km:
+                unserved.append(c)
+                continue
+
+            # ---- log journey ----
             biker["journey"].append({
-                "from": "STORE" if len(biker["journey"]) == 0 else biker["journey"][-1]["to"],
+                "from": "STORE" if not biker["journey"] else biker["journey"][-1]["to"],
                 "to": c.customer_id,
                 "pincode": c.pincode,
 
                 "leg_travel_km": round(leg_dist, 2),
                 "leg_travel_time_min": round(leg_time, 1),
 
-                "arrival_time_min": round(arrival_min, 1),
-                "delivery_complete_min": round(complete_min, 1),
+                "arrival_time_min": round(arrival_time, 1),
+                "delivery_complete_min": round(delivery_complete, 1),
 
-                "cumulative_time_min": round(complete_min, 1),
+                "cumulative_time_min": round(delivery_complete, 1),
                 "cumulative_distance_km": round(cur_dist + leg_dist, 2),
 
                 "lat": c.lat,
@@ -226,40 +205,45 @@ def route_bikers_v2(
             biker["served"].append(c)
             biker["path"].append((c.lat, c.lon))
 
-            # update state
+            # ---- update state ----
             cur_lat, cur_lon = c.lat, c.lon
-            cur_time = complete_min
+            cur_time = delivery_complete
             cur_dist += leg_dist
 
-        # ---------- return to store ----------
+        # ---- final return to store ----
         ret_dist = haversine(cur_lat, cur_lon, store_lat, store_lon)
         ret_time = ret_dist / speed_kmph * 60
 
-        biker["journey"].append({
-            "from": biker["journey"][-1]["to"] if biker["journey"] else "STORE",
-            "to": "STORE",
-            "pincode": None,
+        if cur_time + ret_time <= shift_minutes and cur_dist + ret_dist <= max_distance_km:
+            biker["journey"].append({
+                "from": biker["journey"][-1]["to"] if biker["journey"] else "STORE",
+                "to": "STORE",
+                "pincode": None,
 
-            "leg_travel_km": round(ret_dist, 2),
-            "leg_travel_time_min": round(ret_time, 1),
+                "leg_travel_km": round(ret_dist, 2),
+                "leg_travel_time_min": round(ret_time, 1),
 
-            "arrival_time_min": round(cur_time + ret_time, 1),
-            "delivery_complete_min": None,
+                "arrival_time_min": round(cur_time + ret_time, 1),
+                "delivery_complete_min": None,
 
-            "cumulative_time_min": round(cur_time + ret_time, 1),
-            "cumulative_distance_km": round(cur_dist + ret_dist, 2),
+                "cumulative_time_min": round(cur_time + ret_time, 1),
+                "cumulative_distance_km": round(cur_dist + ret_dist, 2),
 
-            "lat": store_lat,
-            "lon": store_lon
-        })
+                "lat": store_lat,
+                "lon": store_lon
+            })
 
-        biker["path"].append((store_lat, store_lon))
-        biker["distance"] = round(cur_dist + ret_dist, 2)
-        biker["time"] = round(cur_time + ret_time, 1)
+            biker["path"].append((store_lat, store_lon))
+            cur_time += ret_time
+            cur_dist += ret_dist
+
+        biker["time"] = round(cur_time, 1)
+        biker["distance"] = round(cur_dist, 2)
 
         bikers.append(biker)
 
     return bikers, unserved
+
 
 # ============================================================
 # UI – HEADER & TEMPLATE
