@@ -10,7 +10,7 @@ from shapely.geometry import Point
 from streamlit_folium import st_folium
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="Customer Point Generator", layout="wide")
+st.set_page_config(page_title="🛣️ Raftaar Bikers Routing Tool", layout="wide")
 
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1q1sXQq-3F2khJul-p5dfbcriS_pnrnPX"
 DATA_DIR = "data"
