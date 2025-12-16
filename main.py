@@ -3,11 +3,9 @@ import zipfile
 import streamlit as st
 import geopandas as gpd
 import gdown
-import folium
-from streamlit_folium import st_folium
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="Shapefile Loader Test", layout="wide")
+st.set_page_config(page_title="Shapefile Loader", layout="wide")
 
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1q1sXQq-3F2khJul-p5dfbcriS_pnrnPX"
 DATA_DIR = "data"
@@ -15,20 +13,19 @@ ZIP_DIR = os.path.join(DATA_DIR, "zip")
 EXTRACT_DIR = os.path.join(DATA_DIR, "shp")
 
 # ---------------- UI ----------------
-st.title("📍 Shapefile Load Test (Google Drive → Streamlit)")
-st.caption("Downloading large shapefile at runtime. GitHub stays clean. Brain stays happy.")
+st.title("📦 Large Shapefile Loader (No Visualization)")
+st.caption("Google Drive → Streamlit → GeoPandas")
 
 # ---------------- HELPERS ----------------
-def download_zip_from_drive():
+def download_from_drive():
     os.makedirs(ZIP_DIR, exist_ok=True)
 
-    with st.spinner("⬇️ Downloading ZIP from Google Drive..."):
-        gdown.download_folder(
-            DRIVE_FOLDER_URL,
-            output=ZIP_DIR,
-            quiet=False,
-            use_cookies=False
-        )
+    gdown.download_folder(
+        DRIVE_FOLDER_URL,
+        output=ZIP_DIR,
+        quiet=False,
+        use_cookies=False
+    )
 
 def extract_zip():
     os.makedirs(EXTRACT_DIR, exist_ok=True)
@@ -40,9 +37,8 @@ def extract_zip():
 
     zip_path = os.path.join(ZIP_DIR, zip_files[0])
 
-    with st.spinner("🗜 Extracting shapefile..."):
-        with zipfile.ZipFile(zip_path, "r") as z:
-            z.extractall(EXTRACT_DIR)
+    with zipfile.ZipFile(zip_path, "r") as z:
+        z.extractall(EXTRACT_DIR)
 
     return zip_files[0]
 
@@ -53,45 +49,54 @@ def find_shapefile():
                 return os.path.join(root, f)
     return None
 
-# ---------------- PIPELINE ----------------
+@st.cache_data(show_spinner=False)
+def load_gdf(shp_path):
+    return gpd.read_file(shp_path)
+
+# ---------------- MAIN ----------------
 if st.button("🚀 Download & Load Shapefile"):
 
-    if not os.path.exists(ZIP_DIR):
-        download_zip_from_drive()
+    with st.spinner("⬇️ Downloading from Google Drive..."):
+        download_from_drive()
 
     zip_name = extract_zip()
     shp_path = find_shapefile()
 
     if shp_path is None:
-        st.error("❌ Shapefile (.shp) not found after extraction")
+        st.error("❌ Shapefile (.shp) not found")
         st.stop()
 
-    st.success(f"✅ Loaded ZIP: {zip_name}")
+    st.success(f"✅ ZIP loaded: {zip_name}")
     st.info(f"📂 Shapefile path: {shp_path}")
 
-    # ---------------- LOAD SHAPEFILE ----------------
-    with st.spinner("🧠 Reading shapefile with GeoPandas..."):
-        gdf = gpd.read_file(shp_path)
+    with st.spinner("🧠 Reading shapefile..."):
+        gdf = load_gdf(shp_path)
 
-    st.success(f"✅ Shapefile loaded | Rows: {len(gdf)}")
+    # ---------------- VALIDATION ----------------
+    st.subheader("✅ Shapefile Summary")
 
-    # ---------------- PREVIEW ----------------
-    st.subheader("🔍 Attribute Preview")
-    st.dataframe(gdf.head())
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Rows", len(gdf))
+    col2.metric("Columns", len(gdf.columns))
+    col3.metric("CRS", gdf.crs.srs if gdf.crs else "None")
 
-    # ---------------- MAP ----------------
-    st.subheader("🗺 Map Preview")
+    st.subheader("📑 Columns")
+    st.write(list(gdf.columns))
 
-    center = gdf.geometry.centroid
-    m = folium.Map(
-        location=[center.y.mean(), center.x.mean()],
-        zoom_start=5,
-        tiles="cartodbpositron"
-    )
+    st.subheader("🔍 Sample Rows")
+    st.dataframe(gdf.head(10))
 
-    folium.GeoJson(
-        gdf.sample(min(500, len(gdf))),  # prevent browser meltdown
-        name="Pincodes"
-    ).add_to(m)
+    # ---------------- OPTIONAL EXPORT ----------------
+    st.subheader("⬇️ Export Processed Data")
 
-    st_folium(m, height=500)
+    if st.button("Export as Parquet (recommended)"):
+        out_path = os.path.join(DATA_DIR, "pincode_polygons.parquet")
+        gdf.to_parquet(out_path)
+        st.success("✅ Parquet file created")
+
+        with open(out_path, "rb") as f:
+            st.download_button(
+                "Download Parquet",
+                f,
+                file_name="pincode_polygons.parquet"
+            )
