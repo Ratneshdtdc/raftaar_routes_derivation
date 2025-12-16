@@ -8,6 +8,8 @@ import gdown
 import folium
 from shapely.geometry import Point
 from streamlit_folium import st_folium
+from io import BytesIO
+
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="🛣️ Raftaar Bikers Routing Tool", layout="wide")
@@ -86,11 +88,19 @@ Download the template, fill it, and upload back.
 """)
 
 # -------- TEMPLATE DOWNLOAD --------
-template = pd.DataFrame(columns=["Pincode", "OPD", "Office Code", "lat", "long"])
+template = pd.DataFrame(
+    columns=["Pincode", "OPD", "Office Code", "lat", "long"]
+)
+
+buffer = BytesIO()
+template.to_excel(buffer, index=False, engine="openpyxl")
+buffer.seek(0)
+
 st.download_button(
-    "⬇️ Download Template",
-    template.to_excel(index=False, engine="openpyxl"),
-    file_name="input_template.xlsx"
+    label="⬇️ Download Template",
+    data=buffer,
+    file_name="input_template.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
 # -------- FILE UPLOAD --------
