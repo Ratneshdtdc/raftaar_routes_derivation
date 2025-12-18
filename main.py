@@ -58,15 +58,27 @@ def build_distance_matrix(df_customers, store_lat, store_lon):
     DIST_MATRIX = {}
     TIME_MATRIX = {}
 
-    for id1, lat1, lon1 in nodes:
-        for id2, lat2, lon2 in nodes:
-            if id1 == id2:
+    # for id1, lat1, lon1 in nodes:
+    #     for id2, lat2, lon2 in nodes:
+    #         if id1 == id2:
+    #             continue
+
+    #         d, t = road_distance_time(lat1, lon1, lat2, lon2)
+
+    #         DIST_MATRIX[(id1, id2)] = d
+    #         TIME_MATRIX[(id1, id2)] = t
+    for i, (id1, lat1, lon1) in enumerate(nodes):
+        for j, (id2, lat2, lon2) in enumerate(nodes):
+            if j <= i:
                 continue
-
+    
             d, t = road_distance_time(lat1, lon1, lat2, lon2)
-
+    
             DIST_MATRIX[(id1, id2)] = d
             TIME_MATRIX[(id1, id2)] = t
+    
+            DIST_MATRIX[(id2, id1)] = d
+            TIME_MATRIX[(id2, id1)] = t
 
     return DIST_MATRIX, TIME_MATRIX
 
@@ -98,18 +110,14 @@ def get_distance_time(lat1, lon1, lat2, lon2, speed_kmph):
         t = d / speed_kmph * 60
         return d, t
 
+
 @st.cache_data(show_spinner=False)
 def road_distance_time(lat1, lon1, lat2, lon2):
-    """
-    Returns (distance_km, time_min) using OSRM
-    """
     try:
         url = (
             f"http://router.project-osrm.org/route/v1/driving/"
             f"{lon1},{lat1};{lon2},{lat2}"
-            #f"?overview=false"
-            f"?overview=full&geometries=geojson"
-
+            f"?overview=false"
         )
 
         r = requests.get(url, timeout=5)
@@ -117,15 +125,12 @@ def road_distance_time(lat1, lon1, lat2, lon2):
         data = r.json()
 
         route = data["routes"][0]
-        dist_km = route["distance"] / 1000
-        time_min = route["duration"] / 60
-
-        return dist_km, time_min
+        return route["distance"] / 1000, route["duration"] / 60
 
     except Exception:
-        # fallback
-        d = haversine(lat1, lon1, lat2, lon2)
-        return d * 1.4, (d * 1.4 / SPEED_KMPH) * 60
+        d = haversine(lat1, lon1, lat2, lon2) * 1.4
+        return d, (d / SPEED_KMPH) * 60
+
 
 
 def assign_preferred_biker(df_customers, num_bikers):
