@@ -674,6 +674,30 @@ if (
 
     df_logs = pd.DataFrame(logs)
     # ============================================================
+    # BIKER SUMMARY TABLE
+    # ============================================================
+    
+    summary_rows = []
+    
+    for b in st.session_state.bikers:
+    
+        orders = len([x for x in b["journey"] if x["to"] != "STORE"])
+        total_time = round(b["time"], 1)
+        total_distance = round(b["distance"], 2)
+    
+        summary_rows.append({
+            "biker_id": b["id"],
+            "total_orders_delivered": orders,
+            "total_distance_km": total_distance,
+            "total_time_min": total_time,
+            "finish_time": minutes_to_time(shift_start_dt, total_time),
+            "avg_time_per_order_min": round(total_time / orders, 1) if orders > 0 else 0,
+            "avg_distance_per_order_km": round(total_distance / orders, 2) if orders > 0 else 0
+        })
+    
+    df_biker_summary = pd.DataFrame(summary_rows)
+
+    # ============================================================
     # ENRICH LOG WITH ADDRESS DETAILS
     # ============================================================
     
@@ -743,6 +767,9 @@ if (
         file_name="biker_routing_output.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+    st.subheader("🧾 Biker-wise Summary")
+    st.dataframe(df_biker_summary, use_container_width=True)
+
 
 
     
