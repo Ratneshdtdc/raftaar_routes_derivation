@@ -49,6 +49,20 @@ SHP_DIR = f"{DATA_DIR}/shp"
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
+def assign_preferred_biker(df_customers, num_bikers):
+    coords = df_customers[["lat", "lon"]].values
+
+    kmeans = KMeans(
+        n_clusters=num_bikers,
+        random_state=42,
+        n_init=10
+    )
+
+    df_customers = df_customers.copy()
+    df_customers["preferred_biker"] = kmeans.fit_predict(coords)
+
+    return df_customers
+
 
 def download_and_extract_shapefile():
     os.makedirs(ZIP_DIR, exist_ok=True)
@@ -130,32 +144,77 @@ def route_bikers_v3(
         })
 
     unserved = df_customers.copy().reset_index(drop=True)
+    unserved = assign_preferred_biker(unserved, num_bikers)
+    CLUSTER_PENALTY = 5.0  # km equivalent penalty
 
-    # -----------------------
-    # Main greedy loop
-    # -----------------------
-    def assign_customers_to_bikers(df_customers, num_bikers, store_lat, store_lon):
-        coords = df_customers[["lat", "lon"]].values
-
-        # Initialize clusters around store to avoid weird splits
-        kmeans = KMeans(
-            n_clusters=num_bikers,
-            random_state=42,
-            n_init=10
-        )
+    while not unserved.empty:
+        best = None
     
-        df_customers["biker_cluster"] = kmeans.fit_predict(coords)
+        for bi, b in enumerate(bikers):
+            for ci, c in unserved.iterrows():
     
-        return df_customers
+                leg_dist = haversine(b["lat"], b["lon"], c.lat, c.lon)
+                leg_time = leg_dist / speed_kmph * 60
+    
+                arrival = b["time"] + leg_time
+                complete = arrival + service_time_min
+    
+                ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
+                ret_time = ret_dist / speed_kmph * 60
+    
+                if (
+                    complete + ret_time > shift_minutes or
+                    b["distance"] + leg_dist + ret_dist > max_distance_km
+                ):
+                    continue
+    
+                penalty = CLUSTER_PENALTY if c.preferred_biker != bi else 0
+    
+                score = (
+                    leg_dist +
+                    penalty +
+                    ALPHA * (b["time"] / shift_minutes) * leg_dist +
+                    BETA * (b["distance"] / max_distance_km) * leg_dist
+                )
+    
+                if best is None or score < best[0]:
+                    best = (score, bi, ci, arrival, complete)
+    
+        if best is None:
+            break
+    
+        _, bi, ci, arrival, complete = best
+        biker = bikers[bi]
+        c = unserved.loc[ci]
+    
+        leg_dist = haversine(biker["lat"], biker["lon"], c.lat, c.lon)
+    
+        biker["journey"].append({
+            "from": "STORE" if not biker["journey"] else biker["journey"][-1]["to"],
+            "to": c.customer_id,
+            "pincode": c.pincode,
+            "leg_travel_km": round(leg_dist, 2),
+            "leg_travel_time_min": round(leg_dist / speed_kmph * 60, 1),
+            "arrival_time_min": round(arrival, 1),
+            "delivery_complete_min": round(complete, 1),
+            "cumulative_time_min": round(complete, 1),
+            "cumulative_distance_km": round(biker["distance"] + leg_dist, 2),
+            "lat": c.lat,
+            "lon": c.lon
+        })
+    
+        biker["lat"], biker["lon"] = c.lat, c.lon
+        biker["time"] = complete
+        biker["distance"] += leg_dist
+        biker["path"].append((c.lat, c.lon))
+        biker["served"].append(c)
+    
+        unserved = unserved.drop(ci).reset_index(drop=True)
 
-
-    # -----------------------
-    # Return all bikers to store
-    # -----------------------
     for b in bikers:
         ret_dist = haversine(b["lat"], b["lon"], store_lat, store_lon)
         ret_time = ret_dist / speed_kmph * 60
-
+    
         b["journey"].append({
             "from": b["journey"][-1]["to"] if b["journey"] else "STORE",
             "to": "STORE",
@@ -169,12 +228,25 @@ def route_bikers_v3(
             "lat": store_lat,
             "lon": store_lon
         })
-
+    
         b["distance"] += ret_dist
         b["time"] += ret_time
         b["path"].append((store_lat, store_lon))
-
+    
     return bikers, unserved
+
+
+
+    # -----------------------
+    # Main greedy loop
+    # -----------------------
+    
+
+
+    # -----------------------
+    # Return all bikers to store
+    # -----------------------
+    
     
 @st.cache_data
 def load_dark_store_master():
@@ -460,12 +532,50 @@ if st.session_state.routing_done:
 
     colors = ["red", "blue", "green", "purple", "orange"]
 
+    # for i, b in enumerate(bikers):
+    #     folium.PolyLine(
+    #         b["path"],
+    #         weight=4,
+    #         color=colors[i % len(colors)],
+    #         tooltip=b["id"]
+    #     ).add_to(m)
+        
     for i, b in enumerate(bikers):
-        folium.PolyLine(
-            b["path"],
-            weight=4,
-            color=colors[i % len(colors)],
-            tooltip=b["id"]
+    folium.PolyLine(
+        b["path"],
+        weight=4,
+        color=colors[i % len(colors)],
+        tooltip=b["id"]
+    ).add_to(m)
+
+    for seq, step in enumerate(b["journey"], 1):
+        if step["to"] == "STORE":
+            continue
+
+        folium.Marker(
+            location=[step["lat"], step["lon"]],
+            icon=folium.DivIcon(
+                html=f"""
+                <div style="
+                    font-size:10pt;
+                    color:white;
+                    background:{colors[i % len(colors)]};
+                    border-radius:50%;
+                    width:24px;
+                    height:24px;
+                    text-align:center;
+                    line-height:24px;
+                ">{seq}</div>
+                """
+            ),
+            tooltip=f"""
+            <b>Biker:</b> {b['id']}<br>
+            <b>Seq:</b> {seq}<br>
+            <b>AWB:</b> {step['to']}<br>
+            <b>Pincode:</b> {step['pincode']}<br>
+            <b>Arrival:</b> {step['arrival_time_min']} min<br>
+            <b>Leg Dist:</b> {step['leg_travel_km']} km
+            """
         ).add_to(m)
 
     st_folium(m, height=600)
