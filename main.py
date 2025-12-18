@@ -428,26 +428,19 @@ st.sidebar.header("⚙️ Routing Parameters")
 # ROUTING CONSTANTS (FROZEN)
 # ============================================================
 
-SHIFT_START_TIME = pd.to_datetime("10:00").time()
-SHIFT_END_TIME   = pd.to_datetime("20:00").time()
+START_TIME = pd.to_datetime("10:00").time()
+END_TIME   = pd.to_datetime("20:00").time()
 
 HANDOVER_TIME = 10          # minutes per delivery
 SPEED_KMPH        = 15          # biker speed km/hr
-MAX_DISTANCE_KM   = 70          # per biker per shift
+MAX_DISTANCE   = 70          # per biker per shift
 
 SHIFT_MINUTES = (
-    pd.Timestamp.combine(pd.Timestamp.today(), SHIFT_END_TIME) -
-    pd.Timestamp.combine(pd.Timestamp.today(), SHIFT_START_TIME)
+    pd.Timestamp.combine(pd.Timestamp.today(), END_TIME) -
+    pd.Timestamp.combine(pd.Timestamp.today(), START_TIME)
 ).seconds / 60
 
 NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
-
-SHIFT_MINUTES = (
-    pd.Timestamp.combine(pd.Timestamp.today(), SHIFT_END_TIME) -
-    pd.Timestamp.combine(pd.Timestamp.today(), SHIFT_START_TIME)
-).seconds / 60
-
-
 
 # ============================================================
 # ROUTING EXECUTION
