@@ -708,7 +708,8 @@ if (
 
     output = BytesIO()
     
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    #with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
     
         # ---------------------------
         # Sheet 1: Full Journey Log
