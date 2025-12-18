@@ -541,42 +541,42 @@ if st.session_state.routing_done:
     #     ).add_to(m)
         
     for i, b in enumerate(bikers):
-    folium.PolyLine(
-        b["path"],
-        weight=4,
-        color=colors[i % len(colors)],
-        tooltip=b["id"]
-    ).add_to(m)
-
-    for seq, step in enumerate(b["journey"], 1):
-        if step["to"] == "STORE":
-            continue
-
-        folium.Marker(
-            location=[step["lat"], step["lon"]],
-            icon=folium.DivIcon(
-                html=f"""
-                <div style="
-                    font-size:10pt;
-                    color:white;
-                    background:{colors[i % len(colors)]};
-                    border-radius:50%;
-                    width:24px;
-                    height:24px;
-                    text-align:center;
-                    line-height:24px;
-                ">{seq}</div>
-                """
-            ),
-            tooltip=f"""
-            <b>Biker:</b> {b['id']}<br>
-            <b>Seq:</b> {seq}<br>
-            <b>AWB:</b> {step['to']}<br>
-            <b>Pincode:</b> {step['pincode']}<br>
-            <b>Arrival:</b> {step['arrival_time_min']} min<br>
-            <b>Leg Dist:</b> {step['leg_travel_km']} km
-            """
+        folium.PolyLine(
+            b["path"],
+            weight=4,
+            color=colors[i % len(colors)],
+            tooltip=b["id"]
         ).add_to(m)
+    
+        for seq, step in enumerate(b["journey"], 1):
+            if step["to"] == "STORE":
+                continue
+    
+            folium.Marker(
+                location=[step["lat"], step["lon"]],
+                icon=folium.DivIcon(
+                    html=f"""
+                    <div style="
+                        font-size:10pt;
+                        color:white;
+                        background:{colors[i % len(colors)]};
+                        border-radius:50%;
+                        width:24px;
+                        height:24px;
+                        text-align:center;
+                        line-height:24px;
+                    ">{seq}</div>
+                    """
+                ),
+                tooltip=f"""
+                <b>Biker:</b> {b['id']}<br>
+                <b>Seq:</b> {seq}<br>
+                <b>AWB:</b> {step['to']}<br>
+                <b>Pincode:</b> {step['pincode']}<br>
+                <b>Arrival:</b> {step['arrival_time_min']} min<br>
+                <b>Leg Dist:</b> {step['leg_travel_km']} km
+                """
+            ).add_to(m)
 
     st_folium(m, height=600)
 
