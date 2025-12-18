@@ -591,7 +591,7 @@ SHIFT_MINUTES = (
 ).seconds / 60
 
 NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
-st.write("Matrix sample:", list(DIST_MATRIX.items())[:3])
+#st.write("Matrix sample:", list(DIST_MATRIX.items())[:3])
 
 # ============================================================
 # ROUTING EXECUTION
