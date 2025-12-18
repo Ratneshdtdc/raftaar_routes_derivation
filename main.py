@@ -417,12 +417,29 @@ st.success(f"🎯 Generated {len(df_customers)} customer points")
 
 st.sidebar.header("⚙️ Routing Parameters")
 
-START_TIME = st.sidebar.time_input("Start Time", pd.to_datetime("10:00").time())
-END_TIME = st.sidebar.time_input("End Time", pd.to_datetime("20:00").time())
+#START_TIME = st.sidebar.time_input("Start Time", pd.to_datetime("10:00").time())
+#END_TIME = st.sidebar.time_input("End Time", pd.to_datetime("20:00").time())
 
-HANDOVER_TIME = st.sidebar.number_input("Handover Time (mins)", 5, 30, 10)
-SPEED_KMPH = st.sidebar.number_input("Speed (km/h)", 5, 30, 15)
-MAX_DISTANCE = st.sidebar.number_input("Max Distance per Biker (km)", 10, 200, 70)
+#HANDOVER_TIME = st.sidebar.number_input("Handover Time (mins)", 5, 30, 10)
+#SPEED_KMPH = st.sidebar.number_input("Speed (km/h)", 5, 30, 15)
+#MAX_DISTANCE = st.sidebar.number_input("Max Distance per Biker (km)", 10, 200, 70)
+
+# ============================================================
+# ROUTING CONSTANTS (FROZEN)
+# ============================================================
+
+SHIFT_START_TIME = pd.to_datetime("10:00").time()
+SHIFT_END_TIME   = pd.to_datetime("20:00").time()
+
+HANDOVER_TIME_MIN = 10          # minutes per delivery
+SPEED_KMPH        = 15          # biker speed km/hr
+MAX_DISTANCE_KM   = 70          # per biker per shift
+
+SHIFT_MINUTES = (
+    pd.Timestamp.combine(pd.Timestamp.today(), SHIFT_END_TIME) -
+    pd.Timestamp.combine(pd.Timestamp.today(), SHIFT_START_TIME)
+).seconds / 60
+
 NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
 
 SHIFT_MINUTES = (
