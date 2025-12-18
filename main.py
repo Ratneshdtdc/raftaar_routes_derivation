@@ -16,6 +16,7 @@ from sklearn.cluster import KMeans
 from shapely.geometry import Point
 from streamlit_folium import st_folium
 from datetime import datetime, timedelta
+import requests
 
 # ============================================================
 # PAGE CONFIG
@@ -48,6 +49,42 @@ SHP_DIR = f"{DATA_DIR}/shp"
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
+def get_distance_time(lat1, lon1, lat2, lon2, speed_kmph):
+    if USE_ROAD_DISTANCE:
+        return road_distance_time(lat1, lon1, lat2, lon2)
+    else:
+        d = haversine(lat1, lon1, lat2, lon2) * ROAD_MULTIPLIER
+        t = d / speed_kmph * 60
+        return d, t
+
+@st.cache_data(show_spinner=False)
+def road_distance_time(lat1, lon1, lat2, lon2):
+    """
+    Returns (distance_km, time_min) using OSRM
+    """
+    try:
+        url = (
+            f"http://router.project-osrm.org/route/v1/driving/"
+            f"{lon1},{lat1};{lon2},{lat2}"
+            f"?overview=false"
+        )
+
+        r = requests.get(url, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+
+        route = data["routes"][0]
+        dist_km = route["distance"] / 1000
+        time_min = route["duration"] / 60
+
+        return dist_km, time_min
+
+    except Exception:
+        # fallback
+        d = haversine(lat1, lon1, lat2, lon2)
+        return d * 1.4, (d * 1.4 / SPEED_KMPH) * 60
+
+
 def assign_preferred_biker(df_customers, num_bikers):
     coords = df_customers[["lat", "lon"]].values
 
@@ -154,13 +191,21 @@ def route_bikers_v3(
 
         for ci, c in unserved.iterrows():
 
-            leg_dist = haversine(store_lat, store_lon, c.lat, c.lon)
-            leg_time = leg_dist / speed_kmph * 60
+            #leg_dist = haversine(store_lat, store_lon, c.lat, c.lon)
+            #leg_time = leg_dist / speed_kmph * 60
+            leg_dist, leg_time = get_distance_time(
+                b["lat"], b["lon"], c.lat, c.lon, speed_kmph
+            )
             arrival = leg_time
             complete = arrival + service_time_min
 
-            ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
-            ret_time = ret_dist / speed_kmph * 60
+            #ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
+            #ret_time = ret_dist / speed_kmph * 60
+
+            ret_dist, ret_time = get_distance_time(
+                b["lat"], b["lon"], store_lat, store_lon, speed_kmph
+            )
+
 
             if (
                 complete + ret_time > shift_minutes or
@@ -326,6 +371,10 @@ ds_master = load_dark_store_master()
 st.title("🛣️ Raftaar – Biker Routing & Planning Tool")
 
 st.subheader("🏬 Select Dark Store")
+
+USE_ROAD_DISTANCE = True
+ROAD_MULTIPLIER = 1.4
+
 
 ds_master["ds_display"] = (
     ds_master["Dark Store Code"].astype(str)
