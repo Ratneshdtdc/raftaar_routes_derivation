@@ -562,6 +562,20 @@ df_customers = df_input.copy()
 st.success(f"🎯 Generated {len(df_customers)} customer points")
 
 # ============================================================
+# BUILD ROAD DISTANCE MATRIX (ONCE)
+# ============================================================
+
+with st.spinner("⏳ Computing road distance matrix (one-time)..."):
+    DIST_MATRIX, TIME_MATRIX = build_distance_matrix(
+        df_customers,
+        store_lat,
+        store_lon
+    )
+
+st.success("✅ Road distance matrix ready")
+
+
+# ============================================================
 # SIDEBAR – ROUTING PARAMETERS
 # ============================================================
 
