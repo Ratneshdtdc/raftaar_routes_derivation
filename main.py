@@ -72,7 +72,9 @@ def build_distance_matrix(df_customers, store_lat, store_lon):
             if j <= i:
                 continue
     
-            d, t = road_distance_time(lat1, lon1, lat2, lon2)
+            #d, t = road_distance_time(lat1, lon1, lat2, lon2)
+            d, t = road_distance_time(lat1, lon1, lat2, lon2, SPEED_KMPH)
+
     
             DIST_MATRIX[(id1, id2)] = d
             TIME_MATRIX[(id1, id2)] = t
@@ -112,7 +114,7 @@ def get_distance_time(lat1, lon1, lat2, lon2, speed_kmph):
 
 
 @st.cache_data(show_spinner=False)
-def road_distance_time(lat1, lon1, lat2, lon2):
+def road_distance_time(lat1, lon1, lat2, lon2, speed_kmph):
     try:
         url = (
             f"http://router.project-osrm.org/route/v1/driving/"
@@ -128,8 +130,12 @@ def road_distance_time(lat1, lon1, lat2, lon2):
         return route["distance"] / 1000, route["duration"] / 60
 
     except Exception:
+        # fallback: aerial distance × road factor
+        DEFAULT_SPEED = 15  # km/h (fixed fallback)
         d = haversine(lat1, lon1, lat2, lon2) * 1.4
-        return d, (d / SPEED_KMPH) * 60
+        return d, (d / DEFAULT_SPEED) * 60
+
+
 
 
 
