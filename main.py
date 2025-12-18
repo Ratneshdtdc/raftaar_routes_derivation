@@ -688,82 +688,44 @@ if st.session_state.routing_done:
 
     colors = ["red", "blue", "green", "purple", "orange"]
 
-    # for i, b in enumerate(bikers):
-    #     folium.PolyLine(
-    #         b["path"],
-    #         weight=4,
-    #         color=colors[i % len(colors)],
-    #         tooltip=b["id"]
-    #     ).add_to(m)
-        
     for i, b in enumerate(bikers):
-        # folium.PolyLine(
-        #     b["path"],
-        #     weight=4,
-        #     color=colors[i % len(colors)],
-        #     tooltip=b["id"]
-        # ).add_to(m)
-        for step in b["journey"]:
-            if step["to"] == "STORE":
-                continue
-        
-            if step["to"] != "STORE":
-                geom = road_geometry(
-                    step["lat"],
-                    step["lon"],
-                    store_lat,
-                    store_lon
-                ) if step["from"] == "STORE" else road_geometry(
-                    prev_lat,
-                    prev_lon,
-                    step["lat"],
-                    step["lon"]
-                )
-            
-                folium.PolyLine(
-                    geom,
-                    weight=4,
-                    color=colors[i % len(colors)],
-                    opacity=0.8
-                ).add_to(m)
-                
+        # ✅ DEFINE START POINT FOR THIS BIKER
         prev_lat, prev_lon = store_lat, store_lon
         for seq, step in enumerate(b["journey"], 1):
-        
             if step["to"] == "STORE":
-                # draw road back to store
+                # draw return to store
                 geom = road_geometry(
                     prev_lat,
                     prev_lon,
                     store_lat,
                     store_lon
                 )
-        
+    
                 folium.PolyLine(
                     geom,
                     weight=4,
                     color=colors[i % len(colors)],
                     opacity=0.8
                 ).add_to(m)
-        
-                break  # journey ends
-        
-            # draw road from previous point → current delivery
+    
+                break
+    
+            # draw road from previous → current
             geom = road_geometry(
                 prev_lat,
                 prev_lon,
                 step["lat"],
                 step["lon"]
             )
-        
+    
             folium.PolyLine(
                 geom,
                 weight=4,
                 color=colors[i % len(colors)],
                 opacity=0.8
             ).add_to(m)
-        
-            # marker with sequence number
+    
+            # delivery marker
             folium.Marker(
                 location=[step["lat"], step["lon"]],
                 icon=folium.DivIcon(
@@ -788,9 +750,10 @@ if st.session_state.routing_done:
                 <b>Arrival:</b> {step['arrival_time_min']} min
                 """
             ).add_to(m)
-        
-            # 🔴 THIS IS THE KEY LINE 🔴
+    
+            # ✅ UPDATE PREVIOUS POINT
             prev_lat, prev_lon = step["lat"], step["lon"]
+
 
 
     st_folium(m, height=600)
