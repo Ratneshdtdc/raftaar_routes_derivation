@@ -443,8 +443,8 @@ SHIFT_MINUTES = (
 NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
 
 SHIFT_MINUTES = (
-    pd.Timestamp.combine(pd.Timestamp.today(), END_TIME) -
-    pd.Timestamp.combine(pd.Timestamp.today(), START_TIME)
+    pd.Timestamp.combine(pd.Timestamp.today(), SHIFT_END_TIME) -
+    pd.Timestamp.combine(pd.Timestamp.today(), SHIFT_START_TIME)
 ).seconds / 60
 
 
