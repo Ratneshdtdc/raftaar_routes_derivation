@@ -9,4 +9,4 @@ streamlit-folium
 fiona
 pyproj
 openpyxl
-sklearn
+scikit-learn
