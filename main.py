@@ -49,6 +49,23 @@ SHP_DIR = f"{DATA_DIR}/shp"
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
+@st.cache_data(show_spinner=False)
+def road_geometry(lat1, lon1, lat2, lon2):
+    url = (
+        f"http://router.project-osrm.org/route/v1/driving/"
+        f"{lon1},{lat1};{lon2},{lat2}"
+        f"?overview=full&geometries=geojson"
+    )
+
+    r = requests.get(url, timeout=5)
+    r.raise_for_status()
+    data = r.json()
+
+    coords = data["routes"][0]["geometry"]["coordinates"]
+    # OSRM gives lon,lat → convert to lat,lon
+    return [(lat, lon) for lon, lat in coords]
+
+
 def get_distance_time(lat1, lon1, lat2, lon2, speed_kmph):
     if USE_ROAD_DISTANCE:
         return road_distance_time(lat1, lon1, lat2, lon2)
@@ -66,7 +83,9 @@ def road_distance_time(lat1, lon1, lat2, lon2):
         url = (
             f"http://router.project-osrm.org/route/v1/driving/"
             f"{lon1},{lat1};{lon2},{lat2}"
-            f"?overview=false"
+            #f"?overview=false"
+            f"?overview=full&geometries=geojson"
+
         )
 
         r = requests.get(url, timeout=5)
@@ -221,8 +240,10 @@ def route_bikers_v3(
             continue
 
         c = unserved.loc[best_ci]
-        leg_dist = haversine(store_lat, store_lon, c.lat, c.lon)
-        leg_time = leg_dist / speed_kmph * 60
+        #leg_dist = haversine(store_lat, store_lon, c.lat, c.lon)
+        #leg_time = leg_dist / speed_kmph * 60
+
+        leg_dist, leg_time = get_distance_time(store_lat, store_lon, c.lat, c.lon,speed_kmph)
 
         b["journey"].append({
             "from": "STORE",
@@ -235,7 +256,8 @@ def route_bikers_v3(
             "cumulative_time_min": round(best_complete, 1),
             "cumulative_distance_km": round(leg_dist, 2),
             "lat": c.lat,
-            "lon": c.lon
+            "lon": c.lon,
+            "path_geometry": road_geometry(from_lat, from_lon,to_lat, to_lon)
         })
 
         b["lat"], b["lon"] = c.lat, c.lon
@@ -255,14 +277,21 @@ def route_bikers_v3(
         for bi, b in enumerate(bikers):
             for ci, c in unserved.iterrows():
 
-                leg_dist = haversine(b["lat"], b["lon"], c.lat, c.lon)
-                leg_time = leg_dist / speed_kmph * 60
+                # leg_dist = haversine(b["lat"], b["lon"], c.lat, c.lon)
+                # leg_time = leg_dist / speed_kmph * 60
+
+                leg_dist, leg_time = get_distance_time(
+                    b["lat"], b["lon"], c.lat, c.lon, speed_kmph )
+
 
                 arrival = b["time"] + leg_time
                 complete = arrival + service_time_min
 
                 ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
                 ret_time = ret_dist / speed_kmph * 60
+
+                ret_dist, ret_time = get_distance_time(c.lat, c.lon, store_lat, store_lon )
+                
 
                 if (
                     complete + ret_time > shift_minutes or
@@ -310,8 +339,11 @@ def route_bikers_v3(
     # PHASE 3 — Return all bikers to store
     # =========================================================
     for b in bikers:
-        ret_dist = haversine(b["lat"], b["lon"], store_lat, store_lon)
-        ret_time = ret_dist / speed_kmph * 60
+        #ret_dist = haversine(b["lat"], b["lon"], store_lat, store_lon)
+        #ret_time = ret_dist / speed_kmph * 60
+
+        ret_dist, ret_time = get_distance_time(b["lat"], b["lon"], store_lat, store_lon,speed_kmph)
+
 
         b["journey"].append({
             "from": b["journey"][-1]["to"] if b["journey"] else "STORE",
@@ -633,12 +665,22 @@ if st.session_state.routing_done:
     #     ).add_to(m)
         
     for i, b in enumerate(bikers):
-        folium.PolyLine(
-            b["path"],
-            weight=4,
-            color=colors[i % len(colors)],
-            tooltip=b["id"]
-        ).add_to(m)
+        # folium.PolyLine(
+        #     b["path"],
+        #     weight=4,
+        #     color=colors[i % len(colors)],
+        #     tooltip=b["id"]
+        # ).add_to(m)
+        for step in b["journey"]:
+            if step["to"] == "STORE":
+                continue
+        
+            folium.PolyLine(
+                step["path_geometry"],
+                weight=4,
+                color=colors[i % len(colors)],
+                opacity=0.8
+            ).add_to(m)
     
         for seq, step in enumerate(b["journey"], 1):
             if step["to"] == "STORE":
