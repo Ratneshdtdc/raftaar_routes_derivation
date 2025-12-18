@@ -247,17 +247,27 @@ st.title("🛣️ Raftaar – Biker Routing & Planning Tool")
 
 st.subheader("🏬 Select Dark Store")
 
-ds_code = st.selectbox(
-    "Dark Store Code",
-    ds_master["Dark Store Code"].unique()
+ds_master["ds_display"] = (
+    ds_master["Dark Store Code"].astype(str)
+    + " - "
+    + ds_master["Dark Store Name"].astype(str)
 )
 
-ds_row = ds_master[ds_master["Dark Store Code"] == ds_code].iloc[0]
+ds_display = st.selectbox(
+    "Dark Store (Code - Name)",
+    ds_master["ds_display"].unique()
+)
+
+ds_row = ds_master[ds_master["ds_display"] == ds_display].iloc[0]
 
 store_lat = ds_row["Lat"]
 store_lon = ds_row["Long"]
+ds_code = ds_row["Dark Store Code"]
 
-st.info(f"📍 Dark Store Location: {ds_row['Dark Store Name']} ({store_lat}, {store_lon})")
+st.info(
+    f"📍 Selected: {ds_row['Dark Store Name']} "
+    f"({ds_code}) | {store_lat:.4f}, {store_lon:.4f}"
+)
 
 buffer = BytesIO()
 template_cols = [
