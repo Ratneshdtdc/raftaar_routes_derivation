@@ -257,8 +257,7 @@ def route_bikers_v3(
             "cumulative_distance_km": round(leg_dist, 2),
             "lat": c.lat,
             "lon": c.lon,
-            "path_geometry": road_geometry(from_lat, from_lon,to_lat, to_lon)
-        })
+            "path_geometry": road_geometry(store_lat,store_lon,c.lat,c.lon)})
 
         b["lat"], b["lon"] = c.lat, c.lon
         b["time"] = best_complete
@@ -287,8 +286,8 @@ def route_bikers_v3(
                 arrival = b["time"] + leg_time
                 complete = arrival + service_time_min
 
-                ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
-                ret_time = ret_dist / speed_kmph * 60
+                #ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
+                #ret_time = ret_dist / speed_kmph * 60
 
                 ret_dist, ret_time = get_distance_time(c.lat, c.lon, store_lat, store_lon )
                 
@@ -310,6 +309,10 @@ def route_bikers_v3(
         complete, leg_dist, bi, ci = best
         b = bikers[bi]
         c = unserved.loc[ci]
+        
+        from_lat, from_lon = b["lat"], b["lon"]
+        to_lat, to_lon = c.lat, c.lon
+
 
         arrival = b["time"] + leg_dist / speed_kmph * 60
 
@@ -324,7 +327,8 @@ def route_bikers_v3(
             "cumulative_time_min": round(complete, 1),
             "cumulative_distance_km": round(b["distance"] + leg_dist, 2),
             "lat": c.lat,
-            "lon": c.lon
+            "lon": c.lon,
+            "path_geometry": road_geometry(from_lat, from_lon, to_lat, to_lon)
         })
 
         b["lat"], b["lon"] = c.lat, c.lon
