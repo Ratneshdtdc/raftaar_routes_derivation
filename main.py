@@ -88,28 +88,6 @@ def load_shapefile(shp_path):
 def minutes_to_time(start_dt, minutes):
     return (start_dt + timedelta(minutes=minutes)).strftime("%H:%M")
 
-def generate_points_in_polygon(polygon, n, pincode, attrs, start_id):
-    points = []
-    minx, miny, maxx, maxy = polygon.bounds
-    cid = start_id
-
-    while len(points) < n:
-        pt = Point(
-            np.random.uniform(minx, maxx),
-            np.random.uniform(miny, maxy)
-        )
-        if polygon.contains(pt):
-            cid += 1
-            points.append({
-                "customer_id": f"CUST{cid:07d}",
-                "pincode": pincode,
-                "lat": pt.y,
-                "lon": pt.x,
-                **attrs
-            })
-
-    return points, cid
-
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
@@ -254,7 +232,12 @@ def route_bikers_v3(
         b["path"].append((store_lat, store_lon))
 
     return bikers, unserved
+    
+@st.cache_data
+def load_dark_store_master():
+    return pd.read_csv("Dark Store Lat Long.csv")
 
+ds_master = load_dark_store_master()
 
 # ============================================================
 # UI – HEADER & TEMPLATE
@@ -262,17 +245,33 @@ def route_bikers_v3(
 
 st.title("🛣️ Raftaar – Biker Routing & Planning Tool")
 
-st.markdown("""
-### 📥 Input File Format
-- **Pincode** → Serviceable pincode  
-- **OPD** → Orders per day  
-- **Office Code** → Dark store / branch  
-- **lat** → Dark store latitude  
-- **long** → Dark store longitude  
-""")
+st.subheader("🏬 Select Dark Store")
 
-template = pd.DataFrame(columns=["Pincode", "OPD", "Office Code", "lat", "long"])
+ds_code = st.selectbox(
+    "Dark Store Code",
+    ds_master["Dark Store Code"].unique()
+)
+
+ds_row = ds_master[ds_master["Dark Store Code"] == ds_code].iloc[0]
+
+store_lat = ds_row["Lat"]
+store_lon = ds_row["Long"]
+
+st.info(f"📍 Dark Store Location: {ds_row['Dark Store Name']} ({store_lat}, {store_lon})")
+
 buffer = BytesIO()
+template_cols = [
+    "AWB Number",
+    "CONSIGNEE ADDRESS LINE 1",
+    "CONSIGNEE ADDRESS LINE 2",
+    "CONSIGNEE ADDRESS LINE 3",
+    "CONSIGNEE ADDRESS LINE 4",
+    "CONSIGNEE CITY",
+    "CONSIGNEE PINCODE",
+    "CUSTOMER LAT",
+    "CUSTOMER LONG"
+]
+template = pd.DataFrame(columns=template_cols)
 template.to_excel(buffer, index=False)
 buffer.seek(0)
 
@@ -293,9 +292,18 @@ if uploaded_file is None:
     st.stop()
 
 df_input = pd.read_excel(uploaded_file)
-df_input["Pincode"] = df_input["Pincode"].astype(str)
+
+df_input["CONSIGNEE PINCODE"] = df_input["CONSIGNEE PINCODE"].astype(str)
+
+df_input = df_input.rename(columns={
+    "CONSIGNEE PINCODE": "pincode",
+    "CUSTOMER LAT": "lat",
+    "CUSTOMER LONG": "lon",
+    "AWB Number": "customer_id"
+})
 
 st.success("✅ Input file loaded")
+
 
 # ============================================================
 # LOAD SHAPEFILE & FILTER PINCODES
@@ -304,6 +312,11 @@ st.success("✅ Input file loaded")
 # with st.spinner("⬇️ Loading India Pincode Shapefile..."):
 #     shp_path = download_and_extract_shapefile()
 #     gdf = load_shapefile(shp_path)
+
+missing_geo = df_input["lat"].isna() | df_input["lon"].isna()
+df_missing = df_input[missing_geo]
+df_present = df_input[~missing_geo]
+
 
 @st.cache_data(show_spinner="⬇️ Loading India Pincode Shapefile...")
 def load_pincode_gdf():
@@ -333,24 +346,35 @@ gdf = gdf.merge(df_input, left_on=pincode_col, right_on="pincode", how="left")
 # GENERATE CUSTOMER POINTS
 # ============================================================
 
-all_points = []
+generated_points = []
 counter = 0
 
-for _, row in gdf.iterrows():
-    if row.OPD > 0:
-        pts, counter = generate_points_in_polygon(
-            row.geometry,
-            int(row.OPD),
-            row.pincode,
-            {
-                "facility_code": row.facility_code,
-                "OPD": row.OPD
-            },
-            counter
-        )
-        all_points.extend(pts)
+for _, row in df_missing.iterrows():
 
-df_customers = pd.DataFrame(all_points)
+    poly = gdf[gdf[pincode_col] == row.pincode].geometry.values
+
+    if len(poly) == 0:
+        continue  # unserviceable pincode
+
+    pts, counter = generate_points_in_polygon(
+        poly[0],
+        1,
+        row.pincode,
+        {},
+        counter
+    )
+
+    pt = pts[0]
+    row["lat"] = pt["lat"]
+    row["lon"] = pt["lon"]
+
+    generated_points.append(row)
+
+df_generated = pd.DataFrame(generated_points)
+
+df_customers = pd.concat([df_present, df_generated], ignore_index=True)
+
+df_customers = df_customers[["customer_id", "pincode", "lat", "lon"]]
 
 st.success(f"🎯 Generated {len(df_customers)} customer points")
 
@@ -373,8 +397,7 @@ SHIFT_MINUTES = (
     pd.Timestamp.combine(pd.Timestamp.today(), START_TIME)
 ).seconds / 60
 
-store_lat = df_input["lat"].iloc[0]
-store_lon = df_input["long"].iloc[0]
+
 
 # ============================================================
 # ROUTING EXECUTION
