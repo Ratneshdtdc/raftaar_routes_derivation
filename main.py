@@ -237,6 +237,29 @@ def route_bikers_v3(
 def load_dark_store_master():
     return pd.read_csv("Dark Store Lat Long.csv")
 
+def generate_points_in_polygon(polygon, n, pincode, attrs, start_id):
+    points = []
+    minx, miny, maxx, maxy = polygon.bounds
+    cid = start_id
+
+    while len(points) < n:
+        pt = Point(
+            np.random.uniform(minx, maxx),
+            np.random.uniform(miny, maxy)
+        )
+        if polygon.contains(pt):
+            cid += 1
+            points.append({
+                "customer_id": f"CUST{cid:07d}",
+                "pincode": pincode,
+                "lat": pt.y,
+                "lon": pt.x,
+                **attrs
+            })
+
+    return points, cid
+
+
 ds_master = load_dark_store_master()
 
 # ============================================================
