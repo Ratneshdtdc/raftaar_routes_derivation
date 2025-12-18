@@ -431,7 +431,7 @@ st.sidebar.header("⚙️ Routing Parameters")
 SHIFT_START_TIME = pd.to_datetime("10:00").time()
 SHIFT_END_TIME   = pd.to_datetime("20:00").time()
 
-HANDOVER_TIME_MIN = 10          # minutes per delivery
+HANDOVER_TIME = 10          # minutes per delivery
 SPEED_KMPH        = 15          # biker speed km/hr
 MAX_DISTANCE_KM   = 70          # per biker per shift
 
