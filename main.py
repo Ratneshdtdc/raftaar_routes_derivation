@@ -49,24 +49,27 @@ SHP_DIR = f"{DATA_DIR}/shp"
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
-@st.cache_data(show_spinner="⏳ Precomputing road distances...")
-def build_distance_matrix(points, store_lat, store_lon, speed_kmph):
-    locations = [("STORE", store_lat, store_lon)]
-    for _, r in points.iterrows():
-        locations.append((r.customer_id, r.lat, r.lon))
+@st.cache_data(show_spinner="⏳ Building road distance matrix...")
+def build_distance_matrix(df_customers, store_lat, store_lon):
+    nodes = [("STORE", store_lat, store_lon)]
+    for _, r in df_customers.iterrows():
+        nodes.append((r.customer_id, r.lat, r.lon))
 
-    dist = {}
-    time = {}
+    DIST_MATRIX = {}
+    TIME_MATRIX = {}
 
-    for i, (id1, lat1, lon1) in enumerate(locations):
-        for j, (id2, lat2, lon2) in enumerate(locations):
-            if i == j:
+    for id1, lat1, lon1 in nodes:
+        for id2, lat2, lon2 in nodes:
+            if id1 == id2:
                 continue
-            d, t = road_distance_time(lat1, lon1, lat2, lon2)
-            dist[(id1, id2)] = d
-            time[(id1, id2)] = t
 
-    return dist, time
+            d, t = road_distance_time(lat1, lon1, lat2, lon2)
+
+            DIST_MATRIX[(id1, id2)] = d
+            TIME_MATRIX[(id1, id2)] = t
+
+    return DIST_MATRIX, TIME_MATRIX
+
 
 
 
@@ -588,6 +591,7 @@ SHIFT_MINUTES = (
 ).seconds / 60
 
 NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
+st.write("Matrix sample:", list(DIST_MATRIX.items())[:3])
 
 # ============================================================
 # ROUTING EXECUTION
@@ -601,10 +605,11 @@ if st.button("🚀 Run Routing"):
     store_lat,
     store_lon,
     NUM_BIKERS,
-    SPEED_KMPH,
-    HANDOVER_TIME,
     SHIFT_MINUTES,
-    MAX_DISTANCE)
+    MAX_DISTANCE,
+    DIST_MATRIX,
+    TIME_MATRIX
+)
     
     st.session_state.bikers = bikers
     st.session_state.unserved = unserved
