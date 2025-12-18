@@ -328,7 +328,7 @@ gdf = load_pincode_gdf()
 pincode_col = next(col for col in gdf.columns if "PIN" in col.upper())
 gdf[pincode_col] = gdf[pincode_col].astype(str)
 
-gdf = gdf[gdf[pincode_col].isin(df_input["Pincode"])]
+gdf = gdf[gdf[pincode_col].isin(df_input["pincode"])]
 
 st.info(f"Filtered {len(gdf)} pincode polygons")
 
