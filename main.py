@@ -6,7 +6,6 @@ import os
 import zipfile
 import math
 from io import BytesIO
-
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -465,7 +464,8 @@ df_generated = pd.DataFrame(generated_points)
 
 df_customers = pd.concat([df_present, df_generated], ignore_index=True)
 
-df_customers = df_customers[["customer_id", "pincode", "lat", "lon"]]
+#df_customers = df_customers[["customer_id", "pincode", "lat", "lon"]]
+df_customers = df_input.copy()
 
 st.success(f"🎯 Generated {len(df_customers)} customer points")
 
@@ -673,9 +673,75 @@ if (
             })
 
     df_logs = pd.DataFrame(logs)
-
-    st.download_button(
-        "⬇️ Download Full Biker Journey Log",
-        df_logs.to_csv(index=False),
-        "biker_journey_detailed_with_time.csv"
+    # ============================================================
+    # ENRICH LOG WITH ADDRESS DETAILS
+    # ============================================================
+    
+    address_cols = [
+        "customer_id",
+        "CONSIGNEE ADDRESS LINE 1",
+        "CONSIGNEE ADDRESS LINE 2",
+        "CONSIGNEE ADDRESS LINE 3",
+        "CONSIGNEE ADDRESS LINE 4",
+        "CONSIGNEE CITY",
+        "pincode"
+    ]
+    
+    df_addr = df_input[address_cols].drop_duplicates("customer_id")
+    
+    df_logs = df_logs.merge(
+        df_addr,
+        left_on="to",
+        right_on="customer_id",
+        how="left"
     )
+    
+    df_logs.drop(columns=["customer_id"], inplace=True)
+
+
+    # st.download_button(
+    #     "⬇️ Download Full Biker Journey Log",
+    #     df_logs.to_csv(index=False),
+    #     "biker_journey_detailed_with_time.csv"
+    # )
+    
+
+    output = BytesIO()
+    
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    
+        # ---------------------------
+        # Sheet 1: Full Journey Log
+        # ---------------------------
+        df_logs.to_excel(
+            writer,
+            sheet_name="Full_Journey_Log",
+            index=False
+        )
+    
+        # ---------------------------
+        # One sheet per biker
+        # ---------------------------
+        for biker_id in df_logs["biker_id"].unique():
+    
+            df_biker = df_logs[df_logs["biker_id"] == biker_id]
+    
+            sheet_name = biker_id[:31]  # Excel sheet name limit
+    
+            df_biker.to_excel(
+                writer,
+                sheet_name=sheet_name,
+                index=False
+            )
+    
+    output.seek(0)
+    
+    st.download_button(
+        "⬇️ Download Biker-wise Excel Report",
+        data=output,
+        file_name="biker_routing_output.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+    
