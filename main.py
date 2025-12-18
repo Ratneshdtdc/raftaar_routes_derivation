@@ -289,7 +289,7 @@ def route_bikers_v3(
                 #ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
                 #ret_time = ret_dist / speed_kmph * 60
 
-                ret_dist, ret_time = get_distance_time(c.lat, c.lon, store_lat, store_lon )
+                ret_dist, ret_time = get_distance_time(c.lat, c.lon, store_lat, store_lon,speed_kmph )
                 
 
                 if (
