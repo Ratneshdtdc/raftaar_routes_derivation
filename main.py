@@ -13,7 +13,7 @@ import geopandas as gpd
 import streamlit as st
 import gdown
 import folium
-
+from sklearn.cluster import KMeans
 from shapely.geometry import Point
 from streamlit_folium import st_folium
 from datetime import datetime, timedelta
@@ -134,77 +134,20 @@ def route_bikers_v3(
     # -----------------------
     # Main greedy loop
     # -----------------------
-    while not unserved.empty:
-        best = None  # (extra_dist, biker_idx, cust_idx)
+    def assign_customers_to_bikers(df_customers, num_bikers, store_lat, store_lon):
+        coords = df_customers[["lat", "lon"]].values
 
-        for bi, b in enumerate(bikers):
-            for ci, c in unserved.iterrows():
-
-                leg_dist = haversine(b["lat"], b["lon"], c.lat, c.lon)
-                leg_time = leg_dist / speed_kmph * 60
-
-                arrival = b["time"] + leg_time
-                complete = arrival + service_time_min
-
-                ret_dist = haversine(c.lat, c.lon, store_lat, store_lon)
-                ret_time = ret_dist / speed_kmph * 60
-
-                # ---- Feasibility ----
-                if (
-                    complete + ret_time > shift_minutes or
-                    b["distance"] + leg_dist + ret_dist > max_distance_km
-                ):
-                    continue
-
-                time_load = b["time"] / shift_minutes
-                dist_load = b["distance"] / max_distance_km
-                
-                score = (
-                    leg_dist
-                    + ALPHA * time_load * leg_dist
-                    + BETA * dist_load * leg_dist
-                )
-                
-                if best is None or score < best[0]:
-                    best = (score, bi, ci, arrival, complete)
-
-
-        if best is None:
-            break  # no more feasible assignments
-
-        # -----------------------
-        # Commit best assignment
-        # -----------------------
-        _, bi, ci, arrival, complete = best
-        leg_dist = haversine(
-            bikers[bi]["lat"], bikers[bi]["lon"],
-            unserved.loc[ci].lat, unserved.loc[ci].lon
+        # Initialize clusters around store to avoid weird splits
+        kmeans = KMeans(
+            n_clusters=num_bikers,
+            random_state=42,
+            n_init=10
         )
+    
+        df_customers["biker_cluster"] = kmeans.fit_predict(coords)
+    
+        return df_customers
 
-        biker = bikers[bi]
-        c = unserved.loc[ci]
-
-        biker["journey"].append({
-            "from": "STORE" if not biker["journey"] else biker["journey"][-1]["to"],
-            "to": c.customer_id,
-            "pincode": c.pincode,
-            "leg_travel_km": round(leg_dist, 2),
-            "leg_travel_time_min": round(leg_dist / speed_kmph * 60, 1),
-            "arrival_time_min": round(arrival, 1),
-            "delivery_complete_min": round(complete, 1),
-            "cumulative_time_min": round(complete, 1),
-            "cumulative_distance_km": round(biker["distance"] + leg_dist, 2),
-            "lat": c.lat,
-            "lon": c.lon
-        })
-
-        biker["lat"], biker["lon"] = c.lat, c.lon
-        biker["time"] = complete
-        biker["distance"] += leg_dist
-        biker["path"].append((c.lat, c.lon))
-        biker["served"].append(c)
-
-        unserved = unserved.drop(ci).reset_index(drop=True)
 
     # -----------------------
     # Return all bikers to store
