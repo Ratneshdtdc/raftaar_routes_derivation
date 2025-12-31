@@ -388,6 +388,105 @@ def haversine(lat1, lon1, lat2, lon2):
 
 #     return bikers, unserved
 
+def route_bikers_minmax_balanced(
+    df_customers,
+    store_lat,
+    store_lon,
+    num_bikers,
+    shift_minutes,
+    max_distance_km,
+    DIST_MATRIX,
+    TIME_MATRIX
+):
+    SERVICE_TIME = 10
+
+    # -------------------------
+    # STEP 1: BALANCED CLUSTERING
+    # -------------------------
+    coords = df_customers[["lat", "lon"]].values
+    kmeans = KMeans(n_clusters=num_bikers, random_state=42, n_init=10)
+    df_customers = df_customers.copy()
+    df_customers["cluster"] = kmeans.fit_predict(coords)
+
+    # enforce equal load
+    target = int(np.ceil(len(df_customers) / num_bikers))
+
+    bikers = [{
+        "id": f"B{i+1}",
+        "served": [],
+        "distance": 0.0,
+        "time": 0.0,
+        "current_node": "STORE"
+    } for i in range(num_bikers)]
+
+    # -------------------------
+    # STEP 2: ASSIGN ORDERS (ROUND-ROBIN)
+    # -------------------------
+    for _, row in df_customers.sort_values("cluster").iterrows():
+        candidates = sorted(
+            bikers,
+            key=lambda b: (len(b["served"]), b["distance"])
+        )
+        for b in candidates:
+            if len(b["served"]) < target:
+                b["served"].append(row)
+                break
+
+    # -------------------------
+    # STEP 3: ROUTE EACH BIKER (NN TSP)
+    # -------------------------
+    unserved = []
+
+    for b in bikers:
+        curr = "STORE"
+        time = 0
+        dist = 0
+        route = []
+
+        remaining = b["served"].copy()
+        b["served"] = []
+
+        while remaining:
+            best = None
+            for c in remaining:
+                d = DIST_MATRIX[(curr, c.customer_id)]
+                t = TIME_MATRIX[(curr, c.customer_id)]
+                ret_d = DIST_MATRIX[(c.customer_id, "STORE")]
+                ret_t = TIME_MATRIX[(c.customer_id, "STORE")]
+
+                if time + t + SERVICE_TIME + ret_t > shift_minutes:
+                    continue
+                if dist + d + ret_d > max_distance_km:
+                    continue
+
+                if best is None or d < best[0]:
+                    best = (d, c)
+
+            if best is None:
+                break
+
+            _, c = best
+            remaining.remove(c)
+
+            time += TIME_MATRIX[(curr, c.customer_id)] + SERVICE_TIME
+            dist += DIST_MATRIX[(curr, c.customer_id)]
+            curr = c.customer_id
+            b["served"].append(c)
+
+        # return to store
+        if curr != "STORE":
+            time += TIME_MATRIX[(curr, "STORE")]
+            dist += DIST_MATRIX[(curr, "STORE")]
+
+        b["time"] = time
+        b["distance"] = dist
+
+        # leftover orders
+        unserved.extend(remaining)
+
+    return bikers, pd.DataFrame(unserved)
+
+
 def route_bikers_v4_balanced(
     df_customers,
     store_lat,
@@ -804,7 +903,7 @@ NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
 # if not st.button("🚀 Run Routing"):
 #     st.stop()
 if st.button("🚀 Run Routing"):
-    bikers, unserved = route_bikers_v4_balanced(
+    bikers, unserved = route_bikers_minmax_balanced(
         df_customers,
         store_lat,
         store_lon,
@@ -814,6 +913,7 @@ if st.button("🚀 Run Routing"):
         DIST_MATRIX,
         TIME_MATRIX
     )
+
 
     # 🔧 BUILD JOURNEYS FOR MAP + LOGS
     for b in bikers:
