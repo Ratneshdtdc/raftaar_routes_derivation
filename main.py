@@ -921,10 +921,11 @@ if (
     summary_rows = []
     
     for b in st.session_state.bikers:
-    
-        orders = len([x for x in b["journey"] if x["to"] != "STORE"])
+
+        orders = len(b["served"])
         total_time = round(b["time"], 1)
         total_distance = round(b["distance"], 2)
+
     
         summary_rows.append({
             "biker_id": b["id"],
