@@ -206,7 +206,189 @@ def haversine(lat1, lon1, lat2, lon2):
     )
     return 2 * R * math.asin(math.sqrt(a))
 
-def route_bikers_v3(
+# def route_bikers_v3(
+#     df_customers,
+#     store_lat,
+#     store_lon,
+#     num_bikers,
+#     shift_minutes,
+#     max_distance_km,
+#     DIST_MATRIX,
+#     TIME_MATRIX
+# ):
+#     """
+#     Time-first, distance-second biker routing using precomputed road distances.
+#     """
+
+#     # =========================================================
+#     # INITIALIZE BIKERS
+#     # =========================================================
+#     bikers = []
+#     for i in range(num_bikers):
+#         bikers.append({
+#             "id": f"B{i+1}",
+#             "current_node": "STORE",
+#             "lat": store_lat,
+#             "lon": store_lon,
+#             "time": 0.0,
+#             "distance": 0.0,
+#             "journey": [],
+#             "path": [(store_lat, store_lon)],
+#             "served": []
+#         })
+
+#     unserved = df_customers.copy().reset_index(drop=True)
+
+#     # =========================================================
+#     # PHASE 1 — MANDATORY SEEDING (1 ORDER PER BIKER)
+#     # =========================================================
+#     for b in bikers:
+#         if unserved.empty:
+#             break
+
+#         best = None  # (completion_time, distance, customer_index)
+
+#         for ci, c in unserved.iterrows():
+#             leg_dist = DIST_MATRIX[("STORE", c.customer_id)]
+#             leg_time = TIME_MATRIX[("STORE", c.customer_id)]
+
+#             complete = leg_time + 10  # service time fixed = 10 min
+
+#             ret_dist = DIST_MATRIX[(c.customer_id, "STORE")]
+#             ret_time = TIME_MATRIX[(c.customer_id, "STORE")]
+
+#             if (
+#                 complete + ret_time > shift_minutes or
+#                 leg_dist + ret_dist > max_distance_km
+#             ):
+#                 continue
+
+#             candidate = (complete, leg_dist, ci)
+#             if best is None or candidate < best:
+#                 best = candidate
+
+#         if best is None:
+#             continue
+
+#         complete, leg_dist, ci = best
+#         c = unserved.loc[ci]
+
+#         b["journey"].append({
+#             "from": "STORE",
+#             "to": c.customer_id,
+#             "pincode": c.pincode,
+#             "leg_travel_km": round(leg_dist, 2),
+#             "leg_travel_time_min": round(TIME_MATRIX[("STORE", c.customer_id)], 1),
+#             "arrival_time_min": round(TIME_MATRIX[("STORE", c.customer_id)], 1),
+#             "delivery_complete_min": round(complete, 1),
+#             "cumulative_time_min": round(complete, 1),
+#             "cumulative_distance_km": round(leg_dist, 2),
+#             "lat": c.lat,
+#             "lon": c.lon
+#         })
+
+#         b["current_node"] = c.customer_id
+#         b["lat"], b["lon"] = c.lat, c.lon
+#         b["time"] = complete
+#         b["distance"] += leg_dist
+#         b["path"].append((c.lat, c.lon))
+#         b["served"].append(c)
+
+#         unserved = unserved.drop(ci).reset_index(drop=True)
+
+#     # =========================================================
+#     # PHASE 2 — TIME-FIRST GREEDY ASSIGNMENT
+#     # =========================================================
+#     while not unserved.empty:
+#         best = None
+#         # (completion_time, leg_dist, biker_index, customer_index)
+
+#         for bi, b in enumerate(bikers):
+#             from_id = b["current_node"]
+
+#             for ci, c in unserved.iterrows():
+#                 leg_dist = DIST_MATRIX[(from_id, c.customer_id)]
+#                 leg_time = TIME_MATRIX[(from_id, c.customer_id)]
+
+#                 arrival = b["time"] + leg_time
+#                 complete = arrival + 10
+
+#                 ret_dist = DIST_MATRIX[(c.customer_id, "STORE")]
+#                 ret_time = TIME_MATRIX[(c.customer_id, "STORE")]
+
+#                 if (
+#                     complete + ret_time > shift_minutes or
+#                     b["distance"] + leg_dist + ret_dist > max_distance_km
+#                 ):
+#                     continue
+
+#                 candidate = (complete, leg_dist, bi, ci)
+#                 if best is None or candidate < best:
+#                     best = candidate
+
+#         if best is None:
+#             break
+
+#         complete, leg_dist, bi, ci = best
+#         b = bikers[bi]
+#         c = unserved.loc[ci]
+
+#         from_id = b["current_node"]
+#         arrival = b["time"] + TIME_MATRIX[(from_id, c.customer_id)]
+
+#         b["journey"].append({
+#             "from": from_id,
+#             "to": c.customer_id,
+#             "pincode": c.pincode,
+#             "leg_travel_km": round(leg_dist, 2),
+#             "leg_travel_time_min": round(TIME_MATRIX[(from_id, c.customer_id)], 1),
+#             "arrival_time_min": round(arrival, 1),
+#             "delivery_complete_min": round(complete, 1),
+#             "cumulative_time_min": round(complete, 1),
+#             "cumulative_distance_km": round(b["distance"] + leg_dist, 2),
+#             "lat": c.lat,
+#             "lon": c.lon
+#         })
+
+#         b["current_node"] = c.customer_id
+#         b["lat"], b["lon"] = c.lat, c.lon
+#         b["time"] = complete
+#         b["distance"] += leg_dist
+#         b["path"].append((c.lat, c.lon))
+#         b["served"].append(c)
+
+#         unserved = unserved.drop(ci).reset_index(drop=True)
+
+#     # =========================================================
+#     # PHASE 3 — RETURN ALL BIKERS TO STORE
+#     # =========================================================
+#     for b in bikers:
+#         from_id = b["current_node"]
+#         ret_dist = DIST_MATRIX[(from_id, "STORE")]
+#         ret_time = TIME_MATRIX[(from_id, "STORE")]
+
+#         b["journey"].append({
+#             "from": from_id,
+#             "to": "STORE",
+#             "pincode": None,
+#             "leg_travel_km": round(ret_dist, 2),
+#             "leg_travel_time_min": round(ret_time, 1),
+#             "arrival_time_min": round(b["time"] + ret_time, 1),
+#             "delivery_complete_min": None,
+#             "cumulative_time_min": round(b["time"] + ret_time, 1),
+#             "cumulative_distance_km": round(b["distance"] + ret_dist, 2),
+#             "lat": store_lat,
+#             "lon": store_lon
+#         })
+
+#         b["time"] += ret_time
+#         b["distance"] += ret_dist
+#         b["path"].append((store_lat, store_lon))
+#         b["current_node"] = "STORE"
+
+#     return bikers, unserved
+
+def route_bikers_v4_balanced(
     df_customers,
     store_lat,
     store_lon,
@@ -216,179 +398,115 @@ def route_bikers_v3(
     DIST_MATRIX,
     TIME_MATRIX
 ):
-    """
-    Time-first, distance-second biker routing using precomputed road distances.
-    """
+    SERVICE_TIME = 10
 
-    # =========================================================
-    # INITIALIZE BIKERS
-    # =========================================================
-    bikers = []
-    for i in range(num_bikers):
-        bikers.append({
-            "id": f"B{i+1}",
-            "current_node": "STORE",
-            "lat": store_lat,
-            "lon": store_lon,
-            "time": 0.0,
-            "distance": 0.0,
-            "journey": [],
-            "path": [(store_lat, store_lon)],
-            "served": []
-        })
+    # -------------------------
+    # INIT BIKERS
+    # -------------------------
+    bikers = [{
+        "id": f"B{i+1}",
+        "current_node": "STORE",
+        "time": 0.0,
+        "distance": 0.0,
+        "journey": [],
+        "path": [(store_lat, store_lon)],
+        "served": []
+    } for i in range(num_bikers)]
 
     unserved = df_customers.copy().reset_index(drop=True)
 
-    # =========================================================
-    # PHASE 1 — MANDATORY SEEDING (1 ORDER PER BIKER)
-    # =========================================================
+    # -------------------------
+    # PHASE 1: FORCE 1 ORDER PER BIKER
+    # -------------------------
     for b in bikers:
         if unserved.empty:
             break
 
-        best = None  # (completion_time, distance, customer_index)
-
+        best = None
         for ci, c in unserved.iterrows():
-            leg_dist = DIST_MATRIX[("STORE", c.customer_id)]
-            leg_time = TIME_MATRIX[("STORE", c.customer_id)]
+            d = DIST_MATRIX[("STORE", c.customer_id)]
+            t = TIME_MATRIX[("STORE", c.customer_id)] + SERVICE_TIME
 
-            complete = leg_time + 10  # service time fixed = 10 min
-
-            ret_dist = DIST_MATRIX[(c.customer_id, "STORE")]
-            ret_time = TIME_MATRIX[(c.customer_id, "STORE")]
-
-            if (
-                complete + ret_time > shift_minutes or
-                leg_dist + ret_dist > max_distance_km
-            ):
+            if t * 2 > shift_minutes or d * 2 > max_distance_km:
                 continue
 
-            candidate = (complete, leg_dist, ci)
-            if best is None or candidate < best:
-                best = candidate
+            if best is None or t < best[0]:
+                best = (t, d, ci)
 
         if best is None:
             continue
 
-        complete, leg_dist, ci = best
+        _, d, ci = best
         c = unserved.loc[ci]
 
-        b["journey"].append({
-            "from": "STORE",
-            "to": c.customer_id,
-            "pincode": c.pincode,
-            "leg_travel_km": round(leg_dist, 2),
-            "leg_travel_time_min": round(TIME_MATRIX[("STORE", c.customer_id)], 1),
-            "arrival_time_min": round(TIME_MATRIX[("STORE", c.customer_id)], 1),
-            "delivery_complete_min": round(complete, 1),
-            "cumulative_time_min": round(complete, 1),
-            "cumulative_distance_km": round(leg_dist, 2),
-            "lat": c.lat,
-            "lon": c.lon
-        })
-
+        b["time"] += TIME_MATRIX[("STORE", c.customer_id)] + SERVICE_TIME
+        b["distance"] += d
         b["current_node"] = c.customer_id
-        b["lat"], b["lon"] = c.lat, c.lon
-        b["time"] = complete
-        b["distance"] += leg_dist
-        b["path"].append((c.lat, c.lon))
         b["served"].append(c)
 
         unserved = unserved.drop(ci).reset_index(drop=True)
 
-    # =========================================================
-    # PHASE 2 — TIME-FIRST GREEDY ASSIGNMENT
-    # =========================================================
+    # -------------------------
+    # PHASE 2: BALANCED ASSIGNMENT
+    # -------------------------
     while not unserved.empty:
-        best = None
-        # (completion_time, leg_dist, biker_index, customer_index)
 
+        avg_time = np.mean([b["time"] for b in bikers])
+
+        best = None
         for bi, b in enumerate(bikers):
             from_id = b["current_node"]
 
             for ci, c in unserved.iterrows():
-                leg_dist = DIST_MATRIX[(from_id, c.customer_id)]
-                leg_time = TIME_MATRIX[(from_id, c.customer_id)]
+                d = DIST_MATRIX[(from_id, c.customer_id)]
+                t = TIME_MATRIX[(from_id, c.customer_id)]
 
-                arrival = b["time"] + leg_time
-                complete = arrival + 10
-
-                ret_dist = DIST_MATRIX[(c.customer_id, "STORE")]
+                new_time = b["time"] + t + SERVICE_TIME
                 ret_time = TIME_MATRIX[(c.customer_id, "STORE")]
+                ret_dist = DIST_MATRIX[(c.customer_id, "STORE")]
 
-                if (
-                    complete + ret_time > shift_minutes or
-                    b["distance"] + leg_dist + ret_dist > max_distance_km
-                ):
+                if new_time + ret_time > shift_minutes:
+                    continue
+                if b["distance"] + d + ret_dist > max_distance_km:
                     continue
 
-                candidate = (complete, leg_dist, bi, ci)
-                if best is None or candidate < best:
-                    best = candidate
+                imbalance = abs(new_time - avg_time)
+
+                cost = (
+                    1.0 * d +          # distance
+                    0.7 * new_time +   # completion time
+                    1.5 * imbalance    # load balance
+                )
+
+                if best is None or cost < best[0]:
+                    best = (cost, bi, ci, d, t)
 
         if best is None:
             break
 
-        complete, leg_dist, bi, ci = best
+        _, bi, ci, d, t = best
         b = bikers[bi]
         c = unserved.loc[ci]
 
-        from_id = b["current_node"]
-        arrival = b["time"] + TIME_MATRIX[(from_id, c.customer_id)]
-
-        b["journey"].append({
-            "from": from_id,
-            "to": c.customer_id,
-            "pincode": c.pincode,
-            "leg_travel_km": round(leg_dist, 2),
-            "leg_travel_time_min": round(TIME_MATRIX[(from_id, c.customer_id)], 1),
-            "arrival_time_min": round(arrival, 1),
-            "delivery_complete_min": round(complete, 1),
-            "cumulative_time_min": round(complete, 1),
-            "cumulative_distance_km": round(b["distance"] + leg_dist, 2),
-            "lat": c.lat,
-            "lon": c.lon
-        })
-
+        b["time"] += t + SERVICE_TIME
+        b["distance"] += d
         b["current_node"] = c.customer_id
-        b["lat"], b["lon"] = c.lat, c.lon
-        b["time"] = complete
-        b["distance"] += leg_dist
-        b["path"].append((c.lat, c.lon))
         b["served"].append(c)
 
         unserved = unserved.drop(ci).reset_index(drop=True)
 
-    # =========================================================
-    # PHASE 3 — RETURN ALL BIKERS TO STORE
-    # =========================================================
+    # -------------------------
+    # PHASE 3: RETURN TO STORE
+    # -------------------------
     for b in bikers:
-        from_id = b["current_node"]
-        ret_dist = DIST_MATRIX[(from_id, "STORE")]
-        ret_time = TIME_MATRIX[(from_id, "STORE")]
-
-        b["journey"].append({
-            "from": from_id,
-            "to": "STORE",
-            "pincode": None,
-            "leg_travel_km": round(ret_dist, 2),
-            "leg_travel_time_min": round(ret_time, 1),
-            "arrival_time_min": round(b["time"] + ret_time, 1),
-            "delivery_complete_min": None,
-            "cumulative_time_min": round(b["time"] + ret_time, 1),
-            "cumulative_distance_km": round(b["distance"] + ret_dist, 2),
-            "lat": store_lat,
-            "lon": store_lon
-        })
-
-        b["time"] += ret_time
-        b["distance"] += ret_dist
-        b["path"].append((store_lat, store_lon))
+        ret_t = TIME_MATRIX[(b["current_node"], "STORE")]
+        ret_d = DIST_MATRIX[(b["current_node"], "STORE")]
+        b["time"] += ret_t
+        b["distance"] += ret_d
         b["current_node"] = "STORE"
 
     return bikers, unserved
 
-    
     
 @st.cache_data
 def load_dark_store_master():
@@ -626,16 +744,16 @@ NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
 # if not st.button("🚀 Run Routing"):
 #     st.stop()
 if st.button("🚀 Run Routing"):
-    bikers, unserved = route_bikers_v3(
-    df_customers,
-    store_lat,
-    store_lon,
-    NUM_BIKERS,
-    SHIFT_MINUTES,
-    MAX_DISTANCE,
-    DIST_MATRIX,
-    TIME_MATRIX
-)
+    bikers, unserved = route_bikers_v4_balanced(
+        df_customers,
+        store_lat,
+        store_lon,
+        NUM_BIKERS,
+        SHIFT_MINUTES,
+        MAX_DISTANCE,
+        DIST_MATRIX,
+        TIME_MATRIX
+    )
     
     st.session_state.bikers = bikers
     st.session_state.unserved = unserved
