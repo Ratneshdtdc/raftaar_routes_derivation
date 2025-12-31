@@ -443,7 +443,7 @@ def route_bikers_minmax_balanced(
         dist = 0
         route = []
 
-        remaining = b["served"].copy()
+        remaining = list(b["served"])
         b["served"] = []
 
         while remaining:
@@ -466,12 +466,15 @@ def route_bikers_minmax_balanced(
                 break
 
             _, c = best
-            remaining.remove(c)
 
+            # remove by customer_id (SAFE)
+            remaining = [x for x in remaining if x.customer_id != c.customer_id]
+            
             time += TIME_MATRIX[(curr, c.customer_id)] + SERVICE_TIME
             dist += DIST_MATRIX[(curr, c.customer_id)]
             curr = c.customer_id
             b["served"].append(c)
+
 
         # return to store
         if curr != "STORE":
