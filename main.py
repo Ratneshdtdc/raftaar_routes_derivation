@@ -902,35 +902,16 @@ if (
     logs = []
 
     for b in st.session_state.bikers:
-        for seq, step in enumerate(b["journey"], 1):
-
+        for seq, c in enumerate(b["served"], 1):
             logs.append({
                 "biker_id": b["id"],
                 "sequence": seq,
-
-                "from": step["from"],
-                "to": step["to"],
-                "pincode": step["pincode"],
-
-                "leg_travel_km": step["leg_travel_km"],
-                "leg_travel_time_min": step["leg_travel_time_min"],
-
-                "arrival_time": (
-                    minutes_to_time(shift_start_dt, step["arrival_time_min"])
-                    if step["arrival_time_min"] is not None else None
-                ),
-
-                "delivery_complete_time": (
-                    minutes_to_time(shift_start_dt, step["delivery_complete_min"])
-                    if step["delivery_complete_min"] is not None else None
-                ),
-
-                "cumulative_time_min": step["cumulative_time_min"],
-                "cumulative_distance_km": step["cumulative_distance_km"],
-
-                "lat": step["lat"],
-                "lon": step["lon"]
+                "to": c.customer_id,
+                "pincode": c.pincode,
+                "lat": c.lat,
+                "lon": c.lon
             })
+
 
     df_logs = pd.DataFrame(logs)
     # ============================================================
