@@ -136,6 +136,19 @@ def road_distance_time(lat1, lon1, lat2, lon2):
         d = haversine(lat1, lon1, lat2, lon2) * 1.4
         return d, (d / DEFAULT_SPEED) * 60
 
+def safe_dist(DIST_MATRIX, a, b):
+    if (a, b) in DIST_MATRIX:
+        return DIST_MATRIX[(a, b)]
+    if (b, a) in DIST_MATRIX:
+        return DIST_MATRIX[(b, a)]
+    return 0.0  # fallback (never crash)
+
+def safe_time(TIME_MATRIX, a, b):
+    if (a, b) in TIME_MATRIX:
+        return TIME_MATRIX[(a, b)]
+    if (b, a) in TIME_MATRIX:
+        return TIME_MATRIX[(b, a)]
+    return 0.0
 
 
 
@@ -223,20 +236,26 @@ def solve_vrp_ortools(
     n = len(nodes)
 
     def dist(i, j):
-        return int(DIST_MATRIX[(nodes[i], nodes[j])] * 1000)
-
+        return int(
+            safe_dist(DIST_MATRIX, nodes[i], nodes[j]) * 1000
+        )
+    
     def time(i, j):
-        return int(TIME_MATRIX[(nodes[i], nodes[j])] * 60) + SERVICE_TIME_SEC
+        return int(
+            safe_time(TIME_MATRIX, nodes[i], nodes[j]) * 60
+        ) + SERVICE_TIME_SEC
+
 
     manager = pywrapcp.RoutingIndexManager(n, num_bikers, 0)
     routing = pywrapcp.RoutingModel(manager)
 
     # Distance
+
     def dist_cb(from_i, to_i):
-        return dist(
-            manager.IndexToNode(from_i),
-            manager.IndexToNode(to_i)
-        )
+        i = manager.IndexToNode(from_i)
+        j = manager.IndexToNode(to_i)
+        return dist(i, j)
+
 
     dist_idx = routing.RegisterTransitCallback(dist_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(dist_idx)
@@ -251,10 +270,10 @@ def solve_vrp_ortools(
 
     # Time
     def time_cb(from_i, to_i):
-        return time(
-            manager.IndexToNode(from_i),
-            manager.IndexToNode(to_i)
-        )
+        i = manager.IndexToNode(from_i)
+        j = manager.IndexToNode(to_i)
+        return time(i, j)
+
 
     time_idx = routing.RegisterTransitCallback(time_cb)
 
@@ -597,6 +616,11 @@ NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
 
 # if not st.button("🚀 Run Routing"):
 #     st.stop()
+
+assert "STORE" in nodes, "STORE missing from nodes"
+assert df_customers["customer_id"].is_unique, "Duplicate customer_id"
+assert df_customers["customer_id"].dtype == object, "customer_id must be string"
+
 
 if st.button("🚀 Run Routing"):
 
