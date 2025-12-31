@@ -507,7 +507,67 @@ def route_bikers_v4_balanced(
 
     return bikers, unserved
 
-    
+def build_journey_from_served(biker, store_lat, store_lon, DIST_MATRIX, TIME_MATRIX):
+    journey = []
+
+    prev_id = "STORE"
+    prev_lat, prev_lon = store_lat, store_lon
+    current_time = 0.0
+    current_dist = 0.0
+
+    for c in biker["served"]:
+
+        leg_dist = DIST_MATRIX[(prev_id, c.customer_id)]
+        leg_time = TIME_MATRIX[(prev_id, c.customer_id)]
+
+        arrival = current_time + leg_time
+        complete = arrival + 10  # service time
+
+        current_dist += leg_dist
+        current_time = complete
+
+        journey.append({
+            "from": prev_id,
+            "to": c.customer_id,
+            "pincode": c.pincode,
+            "leg_travel_km": round(leg_dist, 2),
+            "leg_travel_time_min": round(leg_time, 1),
+            "arrival_time_min": round(arrival, 1),
+            "delivery_complete_min": round(complete, 1),
+            "cumulative_time_min": round(current_time, 1),
+            "cumulative_distance_km": round(current_dist, 2),
+            "lat": c.lat,
+            "lon": c.lon
+        })
+
+        prev_id = c.customer_id
+        prev_lat, prev_lon = c.lat, c.lon
+
+    # RETURN TO STORE
+    if biker["served"]:
+        ret_dist = DIST_MATRIX[(prev_id, "STORE")]
+        ret_time = TIME_MATRIX[(prev_id, "STORE")]
+
+        current_dist += ret_dist
+        current_time += ret_time
+
+        journey.append({
+            "from": prev_id,
+            "to": "STORE",
+            "pincode": None,
+            "leg_travel_km": round(ret_dist, 2),
+            "leg_travel_time_min": round(ret_time, 1),
+            "arrival_time_min": round(current_time, 1),
+            "delivery_complete_min": None,
+            "cumulative_time_min": round(current_time, 1),
+            "cumulative_distance_km": round(current_dist, 2),
+            "lat": store_lat,
+            "lon": store_lon
+        })
+
+    biker["journey"] = journey
+
+
 @st.cache_data
 def load_dark_store_master():
     return pd.read_csv("Dark Store Lat Long.csv")
@@ -754,7 +814,17 @@ if st.button("🚀 Run Routing"):
         DIST_MATRIX,
         TIME_MATRIX
     )
-    
+
+    # 🔧 BUILD JOURNEYS FOR MAP + LOGS
+    for b in bikers:
+        build_journey_from_served(
+            b,
+            store_lat,
+            store_lon,
+            DIST_MATRIX,
+            TIME_MATRIX
+        )
+
     st.session_state.bikers = bikers
     st.session_state.unserved = unserved
     st.session_state.routing_done = True
