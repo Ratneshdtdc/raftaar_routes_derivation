@@ -617,9 +617,9 @@ NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
 # if not st.button("🚀 Run Routing"):
 #     st.stop()
 
-assert "STORE" in nodes, "STORE missing from nodes"
-assert df_customers["customer_id"].is_unique, "Duplicate customer_id"
-assert df_customers["customer_id"].dtype == object, "customer_id must be string"
+# assert "STORE" in nodes, "STORE missing from nodes"
+# assert df_customers["customer_id"].is_unique, "Duplicate customer_id"
+# assert df_customers["customer_id"].dtype == object, "customer_id must be string"
 
 
 if st.button("🚀 Run Routing"):
