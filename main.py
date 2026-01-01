@@ -267,6 +267,14 @@ def solve_vrp_ortools(
         True,
         "Distance"
     )
+    distance_dimension = routing.GetDimensionOrDie("Distance")
+
+    # 🔒 Force every biker to be used (no idle biker)
+    for v in range(num_bikers):
+        distance_dimension.CumulVar(
+            routing.End(v)
+        ).SetMin(1)
+
 
     # Time
     def time_cb(from_i, to_i):
@@ -284,6 +292,43 @@ def solve_vrp_ortools(
         True,
         "Time"
     )
+
+    # =========================
+    # ORDER COUNT BALANCING
+    # =========================
+    def count_cb(from_i, to_i):
+        to_node = manager.IndexToNode(to_i)
+        return 1 if to_node != 0 else 0
+    
+    count_idx = routing.RegisterTransitCallback(count_cb)
+    
+    max_orders = int(np.ceil(len(df_customers) / num_bikers))
+    min_orders = len(df_customers) // num_bikers
+    
+    routing.AddDimension(
+        count_idx,
+        0,
+        max_orders,
+        True,
+        "Count"
+    )
+    
+    count_dimension = routing.GetDimensionOrDie("Count")
+    
+    # 🔒 Enforce minimum orders per biker
+    for v in range(num_bikers):
+        count_dimension.CumulVar(
+            routing.End(v)
+        ).SetMin(min_orders)
+        
+    # =========================
+    # MINIMIZE MAX DISTANCE
+    # =========================
+    for v in range(num_bikers):
+        routing.AddVariableMinimizedByFinalizer(
+            distance_dimension.CumulVar(routing.End(v))
+        )
+
 
     # Allow dropping with BIG penalty (maximize served)
     penalty = 1_000_000
@@ -621,6 +666,8 @@ NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
 # assert df_customers["customer_id"].is_unique, "Duplicate customer_id"
 # assert df_customers["customer_id"].dtype == object, "customer_id must be string"
 
+if num_bikers > len(df_customers):
+    num_bikers = len(df_customers)
 
 if st.button("🚀 Run Routing"):
 
