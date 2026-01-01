@@ -229,6 +229,10 @@ def solve_vrp_ortools(
     max_distance_km,
     max_time_min
 ):
+    # 🔒 Guard: bikers cannot exceed customers
+    if num_bikers > len(df_customers):
+        num_bikers = len(df_customers)
+
     SERVICE_TIME_SEC = 10 * 60
 
     nodes = ["STORE"] + df_customers["customer_id"].tolist()
@@ -666,8 +670,7 @@ NUM_BIKERS = st.sidebar.number_input("Number of Bikers", 1, 20, 2)
 # assert df_customers["customer_id"].is_unique, "Duplicate customer_id"
 # assert df_customers["customer_id"].dtype == object, "customer_id must be string"
 
-if num_bikers > len(df_customers):
-    num_bikers = len(df_customers)
+
 
 if st.button("🚀 Run Routing"):
 
