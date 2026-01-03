@@ -229,6 +229,16 @@ def solve_vrp_ortools(
     max_distance_km,
     max_time_min
 ):
+    
+    if routes is None:
+    st.error(
+        "❌ No feasible routing found with current constraints.\n"
+        "Try reducing number of bikers."
+    )
+    st.stop()
+
+    
+
     # 🔒 Guard: bikers cannot exceed customers
     if num_bikers > len(df_customers):
         num_bikers = len(df_customers)
@@ -273,12 +283,6 @@ def solve_vrp_ortools(
     )
     distance_dimension = routing.GetDimensionOrDie("Distance")
 
-    # 🔒 Force every biker to be used (no idle biker)
-    for v in range(num_bikers):
-        distance_dimension.CumulVar(
-            routing.End(v)
-        ).SetMin(1)
-
 
     # Time
     def time_cb(from_i, to_i):
@@ -307,7 +311,8 @@ def solve_vrp_ortools(
     count_idx = routing.RegisterTransitCallback(count_cb)
     
     max_orders = int(np.ceil(len(df_customers) / num_bikers))
-    min_orders = len(df_customers) // num_bikers
+    # min_orders = len(df_customers) // num_bikers
+    min_orders = max(0, (len(df_customers) // num_bikers) - 1)
     
     routing.AddDimension(
         count_idx,
@@ -324,6 +329,7 @@ def solve_vrp_ortools(
         count_dimension.CumulVar(
             routing.End(v)
         ).SetMin(min_orders)
+    
         
     # =========================
     # MINIMIZE MAX DISTANCE
