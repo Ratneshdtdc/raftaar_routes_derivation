@@ -231,11 +231,11 @@ def solve_vrp_ortools(
 ):
     
     if routes is None:
-    st.error(
-        "❌ No feasible routing found with current constraints.\n"
-        "Try reducing number of bikers."
-    )
-    st.stop()
+        st.error(
+            "❌ No feasible routing found with current constraints.\n"
+            "Try reducing number of bikers."
+        )
+        st.stop()
 
     
 
