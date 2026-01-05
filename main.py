@@ -307,15 +307,15 @@ def solve_vrp_ortools(
     
     max_orders = int(np.ceil(len(df_customers) / num_bikers))
     # min_orders = len(df_customers) // num_bikers
-    min_orders = max(0, (len(df_customers) // num_bikers) - 1)
+    # min_orders = max(0, (len(df_customers) // num_bikers) - 1)
     
-    routing.AddDimension(
-        count_idx,
-        0,
-        max_orders,
-        True,
-        "Count"
-    )
+    # routing.AddDimension(
+    #     count_idx,
+    #     0,
+    #     max_orders,
+    #     True,
+    #     "Count"
+    # )
     
     count_dimension = routing.GetDimensionOrDie("Count")
 
@@ -337,7 +337,9 @@ def solve_vrp_ortools(
 
     # Allow dropping with BIG penalty (maximize served)
     #penalty = 1_000_000
-    penalty = int(max_time_min * 60 * 5)
+    # penalty = int(max_time_min * 60 * 5)
+    penalty = int(max_time_min * 60 * 100)
+
 
     for node in range(1, n):
         routing.AddDisjunction(
