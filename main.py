@@ -299,25 +299,7 @@ def solve_vrp_ortools(
     # =========================
     # ORDER COUNT BALANCING
     # =========================
-    def count_cb(from_i, to_i):
-        to_node = manager.IndexToNode(to_i)
-        return 1 if to_node != 0 else 0
     
-    count_idx = routing.RegisterTransitCallback(count_cb)
-    
-    max_orders = int(np.ceil(len(df_customers) / num_bikers))
-    # min_orders = len(df_customers) // num_bikers
-    # min_orders = max(0, (len(df_customers) // num_bikers) - 1)
-    
-    # routing.AddDimension(
-    #     count_idx,
-    #     0,
-    #     max_orders,
-    #     True,
-    #     "Count"
-    # )
-    
-    count_dimension = routing.GetDimensionOrDie("Count")
 
     time_dimension = routing.GetDimensionOrDie("Time")
     
@@ -328,11 +310,7 @@ def solve_vrp_ortools(
             time_dimension.CumulVar(routing.End(v))
         )
     
-    # 🔒 Enforce minimum orders per biker
-    for v in range(num_bikers):
-        count_dimension.CumulVar(
-            routing.End(v)
-        ).SetMin(min_orders)
+    # 🔒 Enforce minimum orders per biker)
     
 
     # Allow dropping with BIG penalty (maximize served)
