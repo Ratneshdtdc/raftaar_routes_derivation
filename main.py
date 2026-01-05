@@ -254,10 +254,13 @@ def solve_vrp_ortools(
             safe_dist(DIST_MATRIX, nodes[i], nodes[j]) * 1000
         )
     
+    # def time(i, j):
+    #     return int(
+    #         safe_time(TIME_MATRIX, nodes[i], nodes[j]) * 60
+    #     ) + SERVICE_TIME_SEC
     def time(i, j):
-        return int(
-            safe_time(TIME_MATRIX, nodes[i], nodes[j]) * 60
-        ) + SERVICE_TIME_SEC
+        return int(safe_time(TIME_MATRIX, nodes[i], nodes[j]) * 60)
+
 
 
     manager = pywrapcp.RoutingIndexManager(n, num_bikers, 0)
@@ -272,7 +275,7 @@ def solve_vrp_ortools(
 
 
     dist_idx = routing.RegisterTransitCallback(dist_cb)
-    routing.SetArcCostEvaluatorOfAllVehicles(dist_idx)
+    
 
     routing.AddDimension(
         dist_idx,
@@ -300,6 +303,7 @@ def solve_vrp_ortools(
         True,
         "Time"
     )
+    routing.SetArcCostEvaluatorOfAllVehicles(time_idx)
 
     # =========================
     # ORDER COUNT BALANCING
@@ -323,6 +327,15 @@ def solve_vrp_ortools(
     )
     
     count_dimension = routing.GetDimensionOrDie("Count")
+
+    time_dimension = routing.GetDimensionOrDie("Time")
+    count_dimension.CumulVar(routing.End(v)).SetMin(min_orders)
+
+    # 🎯 PRIMARY OBJECTIVE: Minimize maximum biker time
+    for v in range(num_bikers):
+        routing.AddVariableMinimizedByFinalizer(
+            time_dimension.CumulVar(routing.End(v))
+        )
     
     # 🔒 Enforce minimum orders per biker
     for v in range(num_bikers):
@@ -330,27 +343,23 @@ def solve_vrp_ortools(
             routing.End(v)
         ).SetMin(min_orders)
     
-        
-    # =========================
-    # MINIMIZE MAX DISTANCE
-    # =========================
-    for v in range(num_bikers):
-        routing.AddVariableMinimizedByFinalizer(
-            distance_dimension.CumulVar(routing.End(v))
-        )
-
 
     # Allow dropping with BIG penalty (maximize served)
-    penalty = 1_000_000
+    #penalty = 1_000_000
+    penalty = int(max_time_min * 60 * 5)
+
     for node in range(1, n):
         routing.AddDisjunction(
             [manager.NodeToIndex(node)],
             penalty
         )
 
+    distance_dimension.SetGlobalSpanCostCoefficient(10)
+
+
     search = pywrapcp.DefaultRoutingSearchParameters()
     search.first_solution_strategy = (
-        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
     )
     search.local_search_metaheuristic = (
         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
