@@ -72,9 +72,10 @@ def build_distance_matrix(df_customers, store_lat, store_lon):
         for j, (id2, lat2, lon2) in enumerate(nodes):
             if j <= i:
                 continue
-    
-            #d, t = road_distance_time(lat1, lon1, lat2, lon2)
-            d, t = road_distance_time(lat1, lon1, lat2, lon2)
+
+            SPEED_KMPH = 15
+            d = road_distance_only(lat1, lon1, lat2, lon2)
+            t = (d / SPEED_KMPH) * 60  # minutes
 
     
             DIST_MATRIX[(id1, id2)] = d
@@ -104,18 +105,9 @@ def road_geometry(lat1, lon1, lat2, lon2):
     # OSRM gives lon,lat → convert to lat,lon
     return [(lat, lon) for lon, lat in coords]
 
-
-def get_distance_time(lat1, lon1, lat2, lon2, speed_kmph):
-    if USE_ROAD_DISTANCE:
-        return road_distance_time(lat1, lon1, lat2, lon2)
-    else:
-        d = haversine(lat1, lon1, lat2, lon2) * ROAD_MULTIPLIER
-        t = d / speed_kmph * 60
-        return d, t
-
-
+        
 @st.cache_data(show_spinner=False)
-def road_distance_time(lat1, lon1, lat2, lon2):
+def road_distance_only(lat1, lon1, lat2, lon2):
     try:
         url = (
             f"http://router.project-osrm.org/route/v1/driving/"
@@ -128,13 +120,12 @@ def road_distance_time(lat1, lon1, lat2, lon2):
         data = r.json()
 
         route = data["routes"][0]
-        return route["distance"] / 1000, route["duration"] / 60
+        return route["distance"] / 1000  # km only
 
     except Exception:
-        # SAFE fallback (NO external dependency)
-        DEFAULT_SPEED = 15  # km/h
-        d = haversine(lat1, lon1, lat2, lon2) * 1.4
-        return d, (d / DEFAULT_SPEED) * 60
+        # SAFE fallback
+        return haversine(lat1, lon1, lat2, lon2) * 1.4
+
 
 def safe_dist(DIST_MATRIX, a, b):
     if (a, b) in DIST_MATRIX:
@@ -329,7 +320,7 @@ def solve_vrp_ortools(
     count_dimension = routing.GetDimensionOrDie("Count")
 
     time_dimension = routing.GetDimensionOrDie("Time")
-    count_dimension.CumulVar(routing.End(v)).SetMin(min_orders)
+    
 
     # 🎯 PRIMARY OBJECTIVE: Minimize maximum biker time
     for v in range(num_bikers):
